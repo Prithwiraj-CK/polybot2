@@ -227,13 +227,13 @@ export async function handleAccountLinkSlashCommand(
 			}
 			case 'status': {
 				const linked = await deps.persistenceService.getLinkedAccount(discordUserId);
-				if (!linked.ok) {
-					await respond('❌ No wallet connected.\nUse `/connect` to link your Polymarket wallet.');
+				const addr = linked.ok ? linked.polymarketAccountId : (process.env.POLYMARKET_PROXY_WALLET ?? null);
+				if (!addr) {
+					await respond('❌ No trading wallet configured. Please contact an admin.');
 				} else {
-					const addr = linked.polymarketAccountId;
 					const short = `${addr.slice(0, 6)}...${addr.slice(-4)}`;
 					await respond(
-						`✅ **Wallet Connected**\n` +
+						`✅ **Trading Wallet**\n` +
 						`Address: \`${short}\`\n\n` +
 						`[View on Polygonscan](https://polygonscan.com/address/${addr})`,
 					);
@@ -242,14 +242,15 @@ export async function handleAccountLinkSlashCommand(
 			}
 			case 'balance': {
 				const linked = await deps.persistenceService.getLinkedAccount(discordUserId);
-				if (!linked.ok) {
-					await respond('❌ No wallet connected.\nUse `/connect` to link your Polymarket wallet first.');
+				const balanceAddr = linked.ok ? linked.polymarketAccountId : (process.env.POLYMARKET_PROXY_WALLET ?? null);
+				if (!balanceAddr) {
+					await respond('❌ No trading wallet configured. Please contact an admin.');
 					break;
 				}
 
 				const balance = await deps.trader.getBalance(discordUserId);
 				const cashDollars = (balance.availableCents / 100).toFixed(2);
-				const linkedAddress = linked.polymarketAccountId;
+				const linkedAddress = balanceAddr;
 
 				let publicPositionValueDollars = '0.00';
 				try {
@@ -343,5 +344,5 @@ export const balanceCommand = new SlashCommandBuilder()
 	.setName('balance')
 	.setDescription('Show your current balance');
 
-export const commands = [connectCommand, verifyCommand, disconnectCommand, statusCommand, balanceCommand];
+export const commands = [statusCommand, balanceCommand];
 

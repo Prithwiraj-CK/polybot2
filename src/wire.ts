@@ -530,9 +530,10 @@ export const trader = new UserAccountTrader(
   new ClobPolymarketExecutionGateway(),
   async (discordUserId: DiscordUserId) => {
     const linked = await accountLinkPersistenceService.getLinkedAccount(discordUserId);
-    if (!linked.ok) {
-      return null;
+    if (linked.ok) {
+      return linked.polymarketAccountId;
     }
-    return linked.polymarketAccountId;
+    // Fall back to leader's proxy wallet so all users can trade
+    return (process.env.POLYMARKET_PROXY_WALLET as PolymarketAccountId) ?? null;
   },
 );

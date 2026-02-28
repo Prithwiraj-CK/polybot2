@@ -25,13 +25,13 @@ import crypto from 'crypto';
 export type RouteResult =
 	| { readonly type: 'text'; readonly content: string }
 	| {
-			readonly type: 'confirm';
-			readonly confirmId: string;
-			readonly marketQuestion: string;
-			readonly outcome: 'YES' | 'NO';
-			readonly action: TradeAction;
-			readonly amountDollars: string;
-	  };
+		readonly type: 'confirm';
+		readonly confirmId: string;
+		readonly marketQuestion: string;
+		readonly outcome: 'YES' | 'NO';
+		readonly action: TradeAction;
+		readonly amountDollars: string;
+	};
 
 /**
  * Data passed to the READ explainer.
@@ -108,6 +108,41 @@ export class DiscordMessageRouter {
 		return confirmId;
 	}
 
+	/** Read on-chain USDC balance for any wallet address. Returns cents. */
+	private async readOnchainUsdcBalance(address: string): Promise<number> {
+		const USDC_CONTRACT = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
+		const RPC_ENDPOINTS = [
+			process.env.POLYGON_RPC_URL,
+			'https://polygon-bor-rpc.publicnode.com',
+			'https://1rpc.io/matic',
+		].filter((v): v is string => Boolean(v && v.length > 0));
+
+		const addressHex = address.toLowerCase().replace(/^0x/, '');
+		if (addressHex.length !== 40) return 0;
+
+		const data = `0x70a08231000000000000000000000000${addressHex}`;
+
+		for (const endpoint of RPC_ENDPOINTS) {
+			try {
+				const response = await fetch(endpoint, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						jsonrpc: '2.0', method: 'eth_call',
+						params: [{ to: USDC_CONTRACT, data }, 'latest'], id: 1,
+					}),
+				});
+				if (!response.ok) continue;
+				const payload = (await response.json()) as { result?: string };
+				if (!payload.result?.startsWith('0x')) continue;
+				const raw = BigInt(payload.result);
+				const cents = raw / 10_000n;
+				return Number(cents > BigInt(Number.MAX_SAFE_INTEGER) ? BigInt(Number.MAX_SAFE_INTEGER) : cents);
+			} catch { continue; }
+		}
+		return 0;
+	}
+
 	/**
 	 * Main entry point for routing a Discord message.
 	 * Returns either a plain text response or a trade confirmation request.
@@ -161,15 +196,80 @@ export class DiscordMessageRouter {
 
 		// --- get_balance ---
 		if (agentOutput.intent === 'get_balance') {
+			// Check if the user provided a wallet address in their message
+			const rawText = agentOutput.rawText ?? message;
+			const addrMatch = rawText.match(/0x[a-fA-F0-9]{40}/);
+			const userProvidedAddr = addrMatch ? addrMatch[0] : null;
+
+			if (userProvidedAddr) {
+				// User wants to check a specific wallet — use public APIs (no login needed)
+				const shortAddr = `${userProvidedAddr.slice(0, 6)}...${userProvidedAddr.slice(-4)}`;
+
+				let cashDollars = '0.00';
+				let positionValueDollars = '0.00';
+				let openPositionsCount = 0;
+				interface PositionRow { title?: string; curPrice?: number; size?: number; outcome?: string; }
+				let topPositions: PositionRow[] = [];
+
+				try {
+					const [balResp, valueResp, posResp] = await Promise.all([
+						this.readOnchainUsdcBalance(userProvidedAddr),
+						fetch(`https://data-api.polymarket.com/value?user=${encodeURIComponent(userProvidedAddr)}`),
+						fetch(`https://data-api.polymarket.com/positions?user=${encodeURIComponent(userProvidedAddr)}&sizeThreshold=.1`),
+					]);
+
+					cashDollars = (balResp / 100).toFixed(2);
+
+					if (valueResp.ok) {
+						const rows = (await valueResp.json()) as Array<{ value?: number }>;
+						positionValueDollars = (rows?.[0]?.value ?? 0).toFixed(2);
+					}
+					if (posResp.ok) {
+						const positions = (await posResp.json()) as PositionRow[];
+						openPositionsCount = Array.isArray(positions) ? positions.length : 0;
+						topPositions = Array.isArray(positions) ? positions.slice(0, 5) : [];
+					}
+				} catch { /* fallback to defaults */ }
+
+				const lines = [
+					`💰 **Wallet Balance**`,
+					`• Wallet: \`${shortAddr}\``,
+					`• Cash (USDC): **$${cashDollars}**`,
+					`• Position value: **$${positionValueDollars}**`,
+					`• Open positions: **${openPositionsCount}**`,
+				];
+
+				if (topPositions.length > 0) {
+					lines.push('', '📊 **Top Positions:**');
+					for (const pos of topPositions) {
+						const title = pos.title ?? 'Unknown market';
+						const price = pos.curPrice != null ? `$${Number(pos.curPrice).toFixed(2)}` : '?';
+						const size = pos.size != null ? Number(pos.size).toFixed(2) : '?';
+						const outcome = pos.outcome ?? '';
+						lines.push(`• ${title} — ${outcome} ${size} shares @ ${price}`);
+					}
+				}
+
+				return { type: 'text', content: lines.join('\n') };
+			}
+
+			// No wallet address provided — show trading wallet balance + daily spend limit
 			const balance = await this.deps.trader.getBalance(discordUserId);
 			const availableDollars = (balance.availableCents / 100).toFixed(2);
+			const tradingWallet = process.env.POLYMARKET_PROXY_WALLET ?? '';
+			const shortAddr = tradingWallet ? `${tradingWallet.slice(0, 6)}...${tradingWallet.slice(-4)}` : 'N/A';
 
 			if (isOwnerExempt(discordUserId)) {
-				return { type: 'text', content: [
-					`**Your Balances**`,
-					`• Available: **$${availableDollars}**`,
-					`• Daily limit: **unlimited** (owner)`,
-				].join('\n') };
+				return {
+					type: 'text', content: [
+						`💰 **Trading Wallet**`,
+						`• Wallet: \`${shortAddr}\``,
+						`• Cash (USDC): **$${availableDollars}**`,
+						`• Daily limit: **unlimited** (owner)`,
+						``,
+						`💡 *Tip: To check any wallet, include its address — e.g. \`balance 0xABC...\`*`,
+					].join('\n')
+				};
 			}
 
 			const spent = await getSpentToday(discordUserId);
@@ -177,12 +277,17 @@ export class DiscordMessageRouter {
 			const limitDollars = (DAILY_LIMIT_CENTS / 100).toFixed(2);
 			const spentDollars = (spent / 100).toFixed(2);
 			const remainingDollars = (remaining / 100).toFixed(2);
-			return { type: 'text', content: [
-				`**Your Balances**`,
-				`• Available: **$${availableDollars}**`,
-				`• Spent today: **$${spentDollars}** / $${limitDollars} daily limit`,
-				`• Remaining today: **$${remainingDollars}**`,
-			].join('\n') };
+			return {
+				type: 'text', content: [
+					`💰 **Trading Wallet**`,
+					`• Wallet: \`${shortAddr}\``,
+					`• Cash (USDC): **$${availableDollars}**`,
+					`• Your daily spend: **$${spentDollars}** / $${limitDollars}`,
+					`• Remaining today: **$${remainingDollars}**`,
+					``,
+					`💡 *Tip: To check your own wallet, include your proxy address — e.g. \`balance 0xABC...\`*`,
+				].join('\n')
+			};
 		}
 
 		// --- get_trade_history ---
@@ -190,9 +295,9 @@ export class DiscordMessageRouter {
 			const limit = agentOutput.limit ?? 5;
 
 			const validationContext = await this.deps.buildValidationContext(discordUserId);
-			const linkedAccountId = validationContext.polymarketAccountId;
+			const linkedAccountId = validationContext.polymarketAccountId ?? (process.env.POLYMARKET_PROXY_WALLET || null);
 			if (!linkedAccountId) {
-				return { type: 'text', content: 'Your Polymarket account is not connected yet. Please connect your account before checking trade history.' };
+				return { type: 'text', content: 'Trading is not available right now. Please contact an admin.' };
 			}
 
 			const activities = await fetchPolymarketActivity(linkedAccountId, limit);
@@ -305,7 +410,7 @@ export class DiscordMessageRouter {
 	): Promise<RouteResult | null> {
 		const normalized = message.trim().toLowerCase();
 
-		if (/\b(past|last|recent)\b.*\btrades?\b|\btrade\s+history\b/.test(normalized)) {
+		if (/\b(past | last | recent) \b.*\btrades ?\b |\btrade\s + history\b /.test(normalized)) {
 			const wordToNumber: Record<string, number> = {
 				one: 1, two: 2, three: 3, four: 4, five: 5,
 				six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
@@ -914,7 +1019,7 @@ function isPropMarket(question: string): boolean {
 function mapValidationErrorToUserMessage(errorCode: ValidationErrorCode): string {
 	switch (errorCode) {
 		case 'ACCOUNT_NOT_CONNECTED':
-			return 'Your Polymarket account is not connected yet. Please connect your account before placing a trade.';
+			return 'Trading is not available right now. Please contact an admin.';
 		case 'INVALID_MARKET':
 			return 'That market could not be found. Please check the market and try again.';
 		case 'MARKET_NOT_ACTIVE':

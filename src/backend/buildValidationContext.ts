@@ -44,10 +44,12 @@ export async function buildValidationContext(
 	const linkedAccountResult = await deps.accountLinkPersistenceService.getLinkedAccount(discordUserId);
 
 	/**
-	 * Missing linkage or storage read failure is represented as null.
-	 * Validation layer decides how null linkage is handled.
+	 * If the user has no linked account, fall back to the leader's proxy wallet
+	 * so all Discord users can trade without needing to /connect.
 	 */
-	const polymarketAccountId = linkedAccountResult.ok ? linkedAccountResult.polymarketAccountId : null;
+	const linkedId = linkedAccountResult.ok ? linkedAccountResult.polymarketAccountId : null;
+	const leaderWallet = (process.env.POLYMARKET_PROXY_WALLET ?? null) as import('../types').PolymarketAccountId | null;
+	const polymarketAccountId = linkedId ?? leaderWallet;
 
 	/**
 	 * ValidationContext currently requires a synchronous marketLookup function.
