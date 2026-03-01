@@ -37,3 +37,54 @@ export function getRedis(): Redis | null {
 		return null;
 	}
 }
+
+/**
+ * Cache-or-fetch pattern: tries Redis first, falls back to fetcher.
+ * Stores result in Redis with the given TTL (in seconds).
+ * If Redis is unavailable, always calls the fetcher directly.
+ */
+export async function getOrFetch<T>(
+	key: string,
+	fetcher: () => Promise<T>,
+	ttlSeconds: number = 30,
+): Promise<T> {
+	const r = getRedis();
+	if (r) {
+		try {
+			const cached = await r.get(key);
+			if (cached) {
+				console.log(`[cache] hit: ${key}`);
+				return JSON.parse(cached) as T;
+			}
+		} catch {
+			// Redis read failed — fall through to fetcher
+		}
+	}
+
+	const data = await fetcher();
+
+	// Store in cache (non-blocking, best-effort)
+	if (r) {
+		r.setex(key, ttlSeconds, JSON.stringify(data)).catch(() => { });
+	}
+
+	return data;
+}
+
+/**
+ * Invalidate all keys matching a glob pattern.
+ */
+export async function invalidateCache(pattern: string): Promise<void> {
+	const r = getRedis();
+	if (!r) return;
+
+	try {
+		const stream = r.scanStream({ match: pattern, count: 100 });
+		const keys: string[] = [];
+		stream.on('data', (batch: string[]) => keys.push(...batch));
+		await new Promise<void>((resolve) => stream.on('end', resolve));
+		if (keys.length > 0) await r.del(...keys);
+	} catch {
+		// best-effort
+	}
+}

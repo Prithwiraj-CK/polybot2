@@ -1,6 +1,7 @@
 import type { PolymarketReadProvider } from './PolymarketReadService';
 import type { Market, MarketId, Outcome } from '../types';
-import { callGemini, hasGeminiKeys } from './geminiClient';
+import { callAI as callGemini, hasAIKeys as hasGeminiKeys } from './aiClient';
+import { getOrFetch } from '../storage/redisClient';
 
 /**
  * Base URL for the Polymarket Gamma API (market metadata).
@@ -127,12 +128,19 @@ interface GammaMarketResponse {
 export class PolymarketApiReadProvider implements PolymarketReadProvider {
 	/**
 	 * Fetches ALL active markets from the Gamma API via pagination.
+	 * Results are cached in Redis for 5 minutes to avoid hammering the API.
 	 */
 	public async listMarkets(): Promise<readonly Market[]> {
-		const baseUrl = `${GAMMA_API_BASE}/markets?closed=false`;
-		const all = await this.fetchAllMarkets(baseUrl);
-		console.log(`[listMarkets] Fetched ${all.length} active markets`);
-		return all;
+		return getOrFetch(
+			'polybot:markets:active',
+			async () => {
+				const baseUrl = `${GAMMA_API_BASE}/markets?closed=false`;
+				const all = await this.fetchAllMarkets(baseUrl);
+				console.log(`[listMarkets] Fetched ${all.length} active markets from API`);
+				return all;
+			},
+			300, // 5 minute TTL
+		);
 	}
 
 	/**
@@ -247,8 +255,38 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 			return sportsResults;
 		}
 
-		// Fallback: try slug, tag, and text_query searches (limited to 1 page each)
-		const searchSlug = searchTerms.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+		// --- Fallback: Events text search ---
+		// Try searching events via tag/slug matching with cleaned keywords.
+		// This catches events like "Presidential Election Winner 2028" that the slug search missed.
+		const cleanedKeywords = cleanSearchKeywords(searchTerms);
+		console.log(`[search] Cleaned keywords for fallback: "${cleanedKeywords}"`);
+
+		const eventsTextResults = await this.searchEventsByText(cleanedKeywords);
+		if (eventsTextResults.length > 0) {
+			// Score and sort by keyword relevance (same logic as slug-matched events)
+			const SCORE_STOPWORDS = new Set([
+				'the', 'a', 'an', 'of', 'for', 'in', 'on', 'at', 'to', 'is', 'are', 'be',
+				'will', 'who', 'what', 'how', 'which', 'and', 'or', 'vs', 'versus',
+				'market', 'odds', 'about', 'show', 'tell', 'me', 'please', 'check',
+			]);
+			const kws = cleanedKeywords
+				.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/)
+				.filter(w => w.length >= 2 && !SCORE_STOPWORDS.has(w));
+			eventsTextResults.sort((a, b) => {
+				const rankStatus = (s: Market['status']): number => s === 'active' ? 0 : s === 'paused' ? 1 : 2;
+				const statusDiff = rankStatus(a.status) - rankStatus(b.status);
+				if (statusDiff !== 0) return statusDiff;
+				const aq = a.question.toLowerCase();
+				const bq = b.question.toLowerCase();
+				return kws.filter(kw => bq.includes(kw)).length - kws.filter(kw => aq.includes(kw)).length;
+			});
+			console.log(`[search] Events text search found ${eventsTextResults.length} markets, top: "${eventsTextResults[0]?.question}"`);
+			return eventsTextResults;
+		}
+
+		// --- Fallback: Markets slug, tag, and text_query searches ---
+		// Use cleaned keywords (not the raw query) so we don't pollute searches with noise
+		const searchSlug = cleanedKeywords.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 		let slugResults: Market[] = [];
 		let tagResults: Market[] = [];
 		let textResults: Market[] = [];
@@ -256,10 +294,10 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 			const slugUrl = `${GAMMA_API_BASE}/markets?${scope}&limit=${DEFAULT_PAGE_LIMIT}&slug=${encodeURIComponent(searchSlug)}`;
 			slugResults = slugResults.concat(await this.fetchAndMapMarkets(slugUrl));
 
-			const tagUrl = `${GAMMA_API_BASE}/markets?${scope}&limit=${DEFAULT_PAGE_LIMIT}&tag=${encodeURIComponent(searchTerms)}`;
+			const tagUrl = `${GAMMA_API_BASE}/markets?${scope}&limit=${DEFAULT_PAGE_LIMIT}&tag=${encodeURIComponent(cleanedKeywords)}`;
 			tagResults = tagResults.concat(await this.fetchAndMapMarkets(tagUrl));
 
-			const textUrl = `${GAMMA_API_BASE}/markets?${scope}&limit=${DEFAULT_PAGE_LIMIT}&text_query=${encodeURIComponent(searchTerms)}`;
+			const textUrl = `${GAMMA_API_BASE}/markets?${scope}&limit=${DEFAULT_PAGE_LIMIT}&text_query=${encodeURIComponent(cleanedKeywords)}`;
 			textResults = textResults.concat(await this.fetchAndMapMarkets(textUrl));
 		}
 
@@ -575,11 +613,78 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 		console.log(`[search] Tag search: ${allMarkets.length} total markets, ${activeCount} active`);
 		return allMarkets;
 	}
+
+	/**
+	 * Searches events by generating slug candidates from cleaned keywords
+	 * and trying them against the Gamma /events endpoint.
+	 * This is a broader search than the initial slug search because it uses
+	 * noise-filtered keywords.
+	 */
+	private async searchEventsByText(cleanedQuery: string): Promise<Market[]> {
+		const slugCandidates = buildEventSlugCandidates(cleanedQuery);
+		console.log(`[search] Events text search slug candidates:`, slugCandidates.slice(0, 5));
+
+		for (const scope of ['closed=false', 'closed=true']) {
+			for (const slug of slugCandidates) {
+				try {
+					const url = `${GAMMA_API_BASE}/events?${scope}&limit=3&slug=${encodeURIComponent(slug)}`;
+					const resp = await fetch(url);
+					if (!resp.ok) continue;
+					const events = await resp.json();
+					if (Array.isArray(events) && events.length > 0) {
+						const allMarkets: Market[] = [];
+						for (const event of events) {
+							if (!Array.isArray(event.markets)) continue;
+							console.log(`[search] Events text hit! slug="${slug}" title="${event.title}" markets=${event.markets.length}`);
+							for (const raw of event.markets) {
+								const m = mapGammaMarketToMarket(raw);
+								if (m) allMarkets.push(m);
+							}
+						}
+						if (allMarkets.length > 0) return allMarkets;
+					}
+				} catch {
+					// best-effort; try next slug
+				}
+			}
+		}
+		return [];
+	}
 }
 
 /**
  * Fetches the /sports metadata from the Gamma API with in-memory caching.
  */
+
+/**
+ * Cleans search keywords by removing conversational noise words.
+ * Produces a clean topic string suitable for API queries.
+ *
+ * Example: "Presidential Election Winner 2028 market condition of JD Vance"
+ *       → "Presidential Election Winner 2028 JD Vance"
+ */
+function cleanSearchKeywords(query: string): string {
+	const NOISE_WORDS = new Set([
+		'the', 'a', 'an', 'of', 'for', 'in', 'on', 'at', 'to', 'is', 'are', 'be',
+		'will', 'who', 'what', 'whats', 'how', 'which', 'and', 'or',
+		'market', 'markets', 'condition', 'status', 'odds', 'about',
+		'show', 'tell', 'me', 'please', 'check', 'hi', 'hey', 'can', 'you',
+		'give', 'find', 'get', 'current', 'live', 'update', 'updates',
+		'going', 'this', 'that', 'it', 'its', 'do', 'does', 'did',
+		'has', 'have', 'been', 'would', 'should', 'could', 'any',
+		'right', 'now', 'today', 'tonight', 'latest', 'looking', 'see',
+	]);
+
+	const words = query.trim().split(/\s+/);
+	const cleaned = words.filter(w => {
+		const lower = w.toLowerCase().replace(/[^a-z0-9]/g, '');
+		return lower.length >= 2 && !NOISE_WORDS.has(lower);
+	});
+
+	// If aggressive cleaning removed too much, fall back to original
+	if (cleaned.length < 2) return query.trim();
+	return cleaned.join(' ');
+}
 async function fetchSportsMetadata(): Promise<SportEntry[]> {
 	if (sportsCache && Date.now() < sportsCacheExpiresAt) {
 		return sportsCache;
@@ -798,6 +903,8 @@ function stripConversationalPrefix(query: string): string {
 		'current live status of ', 'current status of ', 'live status of ',
 		'what is the status of ', 'what is the score of ',
 		'what are the odds for ', 'what are the odds on ',
+		'whats the odds for ', 'whats the odds on ',
+		"what's the odds for ", "what's the odds on ",
 		'how are the odds for ', 'how are the odds on ',
 		'how is this game going', 'how is the game going', 'how is this match going',
 		'how is this going', 'how is it going',
@@ -805,15 +912,29 @@ function stripConversationalPrefix(query: string): string {
 		'info on ', 'info about ', 'any updates on ',
 		// Short prefixes last
 		'tell me about ', 'what about ', 'what is ', 'what are ',
+		"what's ", 'whats ',
 		'show me ', 'give me ', 'check on ', 'check about ',
 		'how about ', 'who will win ',
 	];
 	for (const p of prefixes) {
 		if (lower.startsWith(p)) {
-			const rest = query.slice(p.length).trim()
+			let rest = query.slice(p.length).trim()
 				.replace(/\s*(market|right\s*now|rn|today|tonight|at the moment|\?)\s*$/i, '').trim();
+			// Strip trailing noise like "market condition of X" → keep "X" separate
+			rest = rest.replace(/\s+market\s+condition\s+of\b/i, ' ').trim();
 			if (rest.length > 0) return rest;
 		}
+	}
+
+	// --- Priority 3: Strip trailing noise patterns even without a known prefix ---
+	let cleaned = query.trim()
+		.replace(/\s*(market\s*condition|market|right\s*now|rn|today|tonight|at the moment|\?)\s*$/i, '').trim();
+	// Also strip leading noise: "whats" without space, etc.
+	cleaned = cleaned.replace(/^(whats|what's)\s+/i, '').trim();
+	// Strip " of X" at end if preceded by a topic phrase ("condition of JD Vance" → keep "JD Vance" info)
+
+	if (cleaned.length > 0 && cleaned !== query.trim()) {
+		return cleaned;
 	}
 
 	return query; // unchanged — caller may try AI
@@ -846,6 +967,7 @@ function buildEventSlugCandidates(query: string): string[] {
 		['what', 'about'],
 		['what', 'is'],
 		['what', 'are'],
+		['whats'],
 		['show', 'me'],
 		['can', 'you', 'tell', 'me', 'about'],
 		['please', 'tell', 'me', 'about'],
@@ -863,24 +985,47 @@ function buildEventSlugCandidates(query: string): string[] {
 		}
 	}
 
+	// Filter out noise words to get core topic keywords
+	const SLUG_NOISE = new Set([
+		'the', 'a', 'an', 'of', 'for', 'in', 'on', 'at', 'to', 'is', 'are', 'be',
+		'will', 'who', 'what', 'whats', 'how', 'which', 'and', 'or',
+		'market', 'markets', 'condition', 'status', 'odds', 'about',
+		'show', 'tell', 'me', 'please', 'check', 'hi', 'hey', 'can', 'you',
+		'give', 'find', 'get', 'current', 'live', 'update',
+	]);
+	const coreWords = stripped.filter(w => w.length >= 2 && !SLUG_NOISE.has(w));
+
 	const candidates: string[] = [];
 	const add = (s: string) => {
-		if (s && !candidates.includes(s)) candidates.push(s);
+		if (s && s.length >= 3 && !candidates.includes(s)) candidates.push(s);
 	};
 
-	// Stripped query is the best candidate (e.g. "us-strikes-iran-by")
+	// Best candidate: core keywords only (e.g. "presidential-election-winner-2028")
+	if (coreWords.length >= 2) {
+		add(slugify(coreWords));
+	}
+
+	// Stripped query is the next best candidate
 	add(slugify(stripped));
 
-	// Full query slug
-	add(slugify(words));
+	// Sliding windows on CORE words — most likely to match event slugs
+	for (let size = Math.min(6, coreWords.length); size >= 2; size--) {
+		for (let start = 0; start + size <= coreWords.length; start++) {
+			add(slugify(coreWords.slice(start, start + size)));
+		}
+		if (candidates.length >= 10) break;
+	}
 
-	// Sliding windows on ALL words (not filtered) — largest first
-	for (let size = Math.min(8, words.length); size >= 2; size--) {
-		for (let start = 0; start + size <= words.length; start++) {
-			add(slugify(words.slice(start, start + size)));
+	// Sliding windows on ALL stripped words (larger windows)
+	for (let size = Math.min(8, stripped.length); size >= 3; size--) {
+		for (let start = 0; start + size <= stripped.length; start++) {
+			add(slugify(stripped.slice(start, start + size)));
 		}
 		if (candidates.length >= 15) break;
 	}
+
+	// Full query slug as last resort
+	add(slugify(words));
 
 	return candidates.slice(0, 15);
 }

@@ -1,4 +1,4 @@
-import { callGemini, hasGeminiKeys } from './geminiClient';
+import { callAI as callGemini, hasAIKeys as hasGeminiKeys, sanitize } from './aiClient';
 import type { ReadExplainerInput } from '../discord/DiscordMessageRouter';
 
 /**
@@ -21,8 +21,8 @@ const READ_SYSTEM_PROMPT = [
 ].join(' ');
 
 /**
- * Creates an AI-powered read explainer using the official Google GenAI SDK.
- * Requires only GEMINI_API_KEY — no backend, no database, no auth.
+ * Creates an AI-powered read explainer using OpenAI (primary) with Gemini fallback.
+ * No backend, no database, no auth required.
  */
 export function createAiReadExplainer(): (input: ReadExplainerInput) => Promise<string> {
 	return async (input: ReadExplainerInput): Promise<string> => {
@@ -34,7 +34,7 @@ export function createAiReadExplainer(): (input: ReadExplainerInput) => Promise<
 		const fullPrompt = READ_SYSTEM_PROMPT + '\n\nCurrent market context:\n' + contextBlock;
 
 		const text = await callGemini({
-			contents: input.message,
+			contents: sanitize(input.message, 500),
 			systemInstruction: fullPrompt,
 			temperature: 0.4,
 			maxOutputTokens: 500,

@@ -18,7 +18,7 @@ import {
   type ExecuteTradeParams,
   type ExecuteTradeResponse,
 } from './trading/UserAccountTrader';
-import { SupabaseAccountLinkStore } from './storage/SupabaseAccountLinkStore';
+
 import type { Balance, DiscordUserId, Market, PolymarketAccountId, TradeResult } from './types';
 import { ClobClient, Chain, Side, OrderType, AssetType } from '@polymarket/clob-client';
 import { SignatureType } from '@polymarket/order-utils';
@@ -499,14 +499,7 @@ export const accountLinkChallengeService = new AccountLinkChallengeService(
 );
 
 export const accountLinkPersistenceService = new AccountLinkPersistenceService(
-  (() => {
-    if (process.env.SUPABASE_URL && process.env.SUPABASE_KEY) {
-      console.log('📦 Using Supabase for account link persistence');
-      return new SupabaseAccountLinkStore();
-    }
-    console.warn('⚠️ Using in-memory account link store (links will reset on restart)');
-    return new InMemoryAccountLinkStore();
-  })(),
+  new InMemoryAccountLinkStore(),
 );
 
 export const accountLinkVerificationService = new AccountLinkVerificationService(
@@ -517,14 +510,14 @@ export const accountLinkVerificationService = new AccountLinkVerificationService
 /**
  * READ pipeline — works without any backend.
  * Uses the live Polymarket Gamma API (public, no auth) for market data
- * and Gemini for conversational responses.
+ * and AI (OpenAI primary, Gemini fallback) for conversational responses.
  */
 export const readService = new PolymarketReadService(new PolymarketApiReadProvider());
 export const aiReadExplainer = createAiReadExplainer();
 
 /**
- * WRITE pipeline — requires backend (Supabase) for production.
- * Currently wired with in-memory stubs for local development.
+ * WRITE pipeline — all users trade via leader's wallet.
+ * No external persistence needed.
  */
 export const trader = new UserAccountTrader(
   new ClobPolymarketExecutionGateway(),

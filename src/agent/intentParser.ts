@@ -1,4 +1,5 @@
-import { callGemini, hasGeminiKeys } from '../read/geminiClient';
+import { callAI as callGemini, hasAIKeys as hasGeminiKeys, sanitize } from '../read/aiClient';
+import { z } from 'zod';
 import type { AgentOutput, DiscordUserId, MarketId, Outcome, TradeAction, UsdCents } from '../types';
 
 /**
@@ -50,7 +51,7 @@ export async function parseIntent(
 
 	const userPayload = JSON.stringify({
 		userId,
-		message: rawMessage,
+		message: sanitize(rawMessage, 500),
 		instruction:
 			'Return JSON null if ambiguous or missing required fields; otherwise return one valid intent object.',
 	});
@@ -59,7 +60,7 @@ export async function parseIntent(
 		const content = await callGemini({
 			contents: userPayload,
 			systemInstruction: SYSTEM_PROMPT,
-			responseMimeType: 'application/json',
+			jsonMode: true,
 			temperature: 0,
 			maxOutputTokens: 300,
 		});
