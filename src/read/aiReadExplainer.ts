@@ -17,6 +17,7 @@ const READ_SYSTEM_PROMPT = [
 	'Instead, tell the user that while you do not have the specific match details, here are the top trending markets from that league/sport right now.',
 	'You MUST present the sample markets provided in the context. Never hide them.',
 	'Format responses for Discord (markdown is OK, no HTML).',
+	'IMPORTANT: Whenever you include any links in your response, surround them with angle brackets like <https://example.com> to suppress Discord embeds.',
 	'Do NOT include any Olympus or Polymarket links in your response — they are appended automatically after your answer.',
 ].join(' ');
 

@@ -578,9 +578,9 @@ function formatTradeResultMessage(
 	if (result.ok) {
 		const isTxHash = result.tradeId.startsWith('0x');
 		const tradeIdLine = isTxHash
-			? `• Trade: [${result.tradeId.substring(0, 10)}…${result.tradeId.slice(-6)}](https://polygonscan.com/tx/${result.tradeId})`
+			? `• Trade: [${result.tradeId.substring(0, 10)}…${result.tradeId.slice(-6)}](<https://polygonscan.com/tx/${result.tradeId}>)`
 			: `• Trade ID: \`${result.tradeId}\``;
-		return [
+		const lines = [
 			`✅ **${actionLabel}!**`,
 			`• Market: **${context.marketQuestion}**`,
 			`• Action: **${actionVerb}**`,
@@ -588,7 +588,11 @@ function formatTradeResultMessage(
 			`• Amount: **$${amountDollars}**`,
 			tradeIdLine,
 			`• Time: ${new Date(result.executedAtMs).toUTCString()}`,
-		].join('\n');
+		];
+		if (context.action === 'BUY') {
+			lines.push('', '*This is not using your money — this is using the Professor\'s money.*');
+		}
+		return lines.join('\n');
 	}
 
 	const errorMessages: Record<string, string> = {

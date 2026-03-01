@@ -156,7 +156,7 @@ client.on('messageCreate', async (message) => {
         { name: '🎯 Side', value: outcomeLabel, inline: true },
         { name: '💵 Amount', value: `$${result.amountDollars}`, inline: true },
       )
-      .setFooter({ text: 'Expires in 60 seconds — only you can confirm this trade.' });
+      .setFooter({ text: result.action === 'BUY' ? 'Expires in 60 seconds — this is not using your money, this is using the Professor\'s money.' : 'Expires in 60 seconds — only you can confirm this trade.' });
 
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder()
