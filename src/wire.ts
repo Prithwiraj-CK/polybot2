@@ -258,7 +258,9 @@ class ClobPolymarketExecutionGateway implements PolymarketExecutionGateway {
           : typeof error === 'object' && error !== null
             ? JSON.stringify(error)
             : String(error);
-      console.error('❌ CLOB order failed:', errMsg.substring(0, 200));
+      // Redact potential API keys/secrets before logging, then truncate
+      const safeMsg = errMsg.replace(/(?:sk-|key-|secret-|passphrase[=: ]*)[a-zA-Z0-9_\-]{8,}/gi, '[REDACTED]').substring(0, 100);
+      console.error('❌ CLOB order failed:', safeMsg);
 
       if (errMsg.includes('insufficient') || errMsg.includes('balance')) {
         throw { code: 'INVALID_AMOUNT', message: 'Insufficient balance on Polymarket' };

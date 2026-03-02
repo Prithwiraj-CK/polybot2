@@ -8,16 +8,17 @@ export const DAILY_LIMIT_CENTS = 500;
 
 /**
  * Owner Discord user ID — exempt from daily spend limits.
- * Loaded from OWNER_DISCORD_ID env var, with hardcoded fallback.
+ * Must be set via OWNER_DISCORD_ID env var. No hardcoded fallback (security).
  */
-const OWNER_DISCORD_ID: string = process.env.OWNER_DISCORD_ID ?? '1161631744768884746';
+const OWNER_DISCORD_ID: string | undefined = process.env.OWNER_DISCORD_ID;
 
 /**
  * Returns true if the given Discord user is the bot owner,
  * who is exempt from daily spend limits (for testing).
+ * Returns false if OWNER_DISCORD_ID is not configured.
  */
 export function isOwnerExempt(discordUserId: DiscordUserId): boolean {
-	return discordUserId === OWNER_DISCORD_ID;
+	return OWNER_DISCORD_ID !== undefined && discordUserId === OWNER_DISCORD_ID;
 }
 
 /** Redis key prefix for spend tracking. */

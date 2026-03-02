@@ -4,7 +4,11 @@
   "description": "This production-grade Discord bot enables users to interact with Polymarket markets directly from Discord. Users can query market information, check virtual balances, view trade history, and place small demo trades using a house-funded wallet. The bot leverages advanced AI for natural language understanding, ensuring a seamless and intuitive user experience.",
   "main": "index.js",
   "scripts": {
-    "dev": "ts-node src/index.ts",
+    "dev": "npx tsx src/index.ts",
+    "start": "pm2 start ecosystem.config.cjs",
+    "stop": "pm2 stop polybot",
+    "restart": "pm2 restart polybot",
+    "logs": "pm2 logs polybot",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -27,6 +31,7 @@
     "dotenv": "^17.3.1",
     "ethers": "^6.16.0",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.2.1",
     "ioredis": "^5.10.0",
     "openai": "^6.25.0",
     "zod": "^4.3.6"
@@ -37,6 +42,7 @@
     "@types/ioredis": "^4.28.10",
     "@types/node": "^25.3.0",
     "ts-node": "^10.9.2",
+    "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   }
 }

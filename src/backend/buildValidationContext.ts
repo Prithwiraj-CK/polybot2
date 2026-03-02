@@ -2,13 +2,7 @@ import { AccountLinkPersistenceService } from '../auth/AccountLinkPersistenceSer
 import { PolymarketReadService } from '../read/PolymarketReadService';
 import type { DiscordUserId } from '../types';
 import type { ValidationContext } from './validateAgentOutput';
-
-/**
- * Temporary fixed limits for deterministic context construction.
- * TODO: Replace with persisted limit tracking service once available.
- */
-const DAILY_LIMIT_CENTS_STUB = 500;
-const SPENT_THIS_HOUR_CENTS_STUB = 0;
+import { getRemainingToday, getSpentToday, isOwnerExempt, DAILY_LIMIT_CENTS } from '../storage/limits';
 
 /**
  * Dependencies required to construct ValidationContext from read-only sources.
@@ -58,10 +52,18 @@ export async function buildValidationContext(
 	 */
 	const marketStatusIndex = await buildMarketStatusIndex(deps.polymarketReadService);
 
+	// Wire real spend tracking (owner gets full limit, others get actual remaining)
+	const remainingDailyLimitCents = isOwnerExempt(discordUserId)
+		? DAILY_LIMIT_CENTS
+		: await getRemainingToday(discordUserId);
+	const spentThisHourCents = isOwnerExempt(discordUserId)
+		? 0
+		: await getSpentToday(discordUserId);
+
 	return {
 		polymarketAccountId,
-		remainingDailyLimitCents: DAILY_LIMIT_CENTS_STUB,
-		spentThisHourCents: SPENT_THIS_HOUR_CENTS_STUB,
+		remainingDailyLimitCents,
+		spentThisHourCents,
 		marketLookup: (marketId: string) => marketStatusIndex.get(marketId) ?? null,
 	};
 }

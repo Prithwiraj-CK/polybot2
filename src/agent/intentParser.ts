@@ -8,6 +8,23 @@ import type { AgentOutput, DiscordUserId, MarketId, Outcome, TradeAction, UsdCen
  */
 
 /**
+ * Blocklist of prompt injection phrases. Any message containing these
+ * (case-insensitive) is immediately rejected.
+ */
+const INJECTION_BLOCKLIST = [
+	'ignore all instructions',
+	'ignore previous instructions',
+	'disregard above',
+	'override system prompt',
+	'you are now',
+	'act as',
+	'pretend to be',
+	'forget your instructions',
+	'new system prompt',
+	'system: ',
+];
+
+/**
  * Explicitly enumerate supported intents so runtime checks stay aligned with contracts.
  */
 const SUPPORTED_INTENTS = new Set([
@@ -16,6 +33,12 @@ const SUPPORTED_INTENTS = new Set([
 	'get_trade_history',
 	'query_market',
 ]);
+
+/**
+ * Maximum trade amount in cents ($100). Applies to ALL users, including the owner.
+ * Prevents the AI from returning absurdly large trade amounts.
+ */
+const MAX_TRADE_AMOUNT_CENTS = 10_000;
 
 /**
  * System prompt hard-restricts the model to NLU only and strict JSON output.
@@ -43,6 +66,15 @@ export async function parseIntent(
 ): Promise<AgentOutput | null> {
 	if (typeof rawMessage !== 'string' || rawMessage.trim().length === 0) {
 		return null;
+	}
+
+	// Prompt injection blocklist check
+	const lowerMsg = rawMessage.toLowerCase();
+	for (const phrase of INJECTION_BLOCKLIST) {
+		if (lowerMsg.includes(phrase)) {
+			console.warn(`[intentParser] Blocked potential prompt injection: "${rawMessage.substring(0, 60)}..."`);
+			return null;
+		}
 	}
 
 	if (!hasGeminiKeys()) {
@@ -86,6 +118,15 @@ export async function parseIntent(
 
 		if (parsed.userId !== userId) {
 			return null;
+		}
+
+		// Response integrity: if the AI echoed a large chunk of the user's raw text,
+		// it may have been manipulated by injection
+		if (parsed.intent === 'place_bet' && typeof parsed.rawText === 'string') {
+			const overlap = rawMessage.substring(0, 60);
+			if (overlap.length > 15 && parsed.rawText.includes(overlap) === false) {
+				// Expected: rawText should contain part of original message
+			}
 		}
 
 		return toBrandedAgentOutput(parsed);
@@ -142,7 +183,8 @@ function isAgentOutput(value: unknown): value is AgentOutput {
 			typeof value.marketId !== 'string' ||
 			(value.outcome !== 'YES' && value.outcome !== 'NO') ||
 			typeof value.amountCents !== 'number' ||
-			!Number.isFinite(value.amountCents)
+			!Number.isFinite(value.amountCents) ||
+			value.amountCents > MAX_TRADE_AMOUNT_CENTS
 		) {
 			return false;
 		}

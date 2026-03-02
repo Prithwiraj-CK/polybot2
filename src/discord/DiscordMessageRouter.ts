@@ -14,7 +14,7 @@ import {
 	getSpentToday,
 	getRemainingToday,
 	isOwnerExempt,
-	recordSpend,
+	trySpend,
 } from '../storage/limits';
 import crypto from 'crypto';
 
@@ -382,10 +382,16 @@ export class DiscordMessageRouter {
 		// Store pending trade and return confirmation prompt
 		const amountCentsNum = Number(effectiveIntent.amountCents);
 		const confirmId = this.storePendingTrade(async () => {
-			const tradeResult = await this.deps.trader.placeTrade(tradeRequest);
-			if (tradeResult.ok && actionForSpend === 'BUY') {
-				await recordSpend(discordUserId, amountCentsNum);
+			// Atomic spend check-and-record BEFORE placing the trade (prevents TOCTOU race)
+			if (actionForSpend === 'BUY' && !isOwnerExempt(discordUserId)) {
+				const allowed = await trySpend(discordUserId, amountCentsNum);
+				if (!allowed) {
+					const remaining = await getRemainingToday(discordUserId);
+					const remainingDollars = (remaining / 100).toFixed(2);
+					return `⛔ Daily limit reached. You can spend **$${remainingDollars}** more today.`;
+				}
 			}
+			const tradeResult = await this.deps.trader.placeTrade(tradeRequest);
 			return formatTradeResultMessage(tradeResult, {
 				marketQuestion: effectiveMarket.question,
 				outcome: effectiveIntent.outcome,
@@ -545,10 +551,16 @@ export class DiscordMessageRouter {
 		// Store pending trade and return confirmation prompt
 		const amountCentsNum = Number(pseudoIntent.amountCents);
 		const confirmId = this.storePendingTrade(async () => {
-			const tradeResult = await this.deps.trader.placeTrade(tradeRequest);
-			if (tradeResult.ok && action === 'BUY') {
-				await recordSpend(discordUserId, amountCentsNum);
+			// Atomic spend check-and-record BEFORE placing the trade (prevents TOCTOU race)
+			if (action === 'BUY' && !isOwnerExempt(discordUserId)) {
+				const allowed = await trySpend(discordUserId, amountCentsNum);
+				if (!allowed) {
+					const remaining = await getRemainingToday(discordUserId);
+					const remainingDollars = (remaining / 100).toFixed(2);
+					return `⛔ Daily limit reached. You can spend **$${remainingDollars}** more today.`;
+				}
 			}
+			const tradeResult = await this.deps.trader.placeTrade(tradeRequest);
 			return formatTradeResultMessage(tradeResult, {
 				marketQuestion: selectedMarket.question,
 				outcome: pseudoIntent.outcome,

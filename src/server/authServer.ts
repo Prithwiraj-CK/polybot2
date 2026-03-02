@@ -4,6 +4,7 @@ import cors from 'cors';
 import crypto from 'crypto';
 import path from 'path';
 import { ethers } from 'ethers';
+import rateLimit from 'express-rate-limit';
 import {
   accountLinkPersistenceService,
 } from '../wire';
@@ -55,6 +56,24 @@ setInterval(() => {
 const app = express();
 const AUTH_PORT = process.env.AUTH_PORT || 3001;
 
+/**
+ * BOT_API_SECRET is REQUIRED. If not set, protected endpoints fail closed (403).
+ * This prevents unauthenticated session creation by external attackers.
+ */
+const BOT_API_SECRET: string | undefined = process.env.BOT_API_SECRET;
+
+function requireBotSecret(req: Request, res: Response): boolean {
+  if (!BOT_API_SECRET) {
+    res.status(403).json({ error: 'Forbidden: BOT_API_SECRET not configured' });
+    return false;
+  }
+  if (req.headers['x-bot-secret'] !== BOT_API_SECRET) {
+    res.status(403).json({ error: 'Forbidden' });
+    return false;
+  }
+  return true;
+}
+
 const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS ?? `http://localhost:${AUTH_PORT}`)
   .split(',')
   .map(o => o.trim());
@@ -62,16 +81,31 @@ app.use(cors({ origin: ALLOWED_ORIGINS }));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '..', '..', 'public')));
 
+/* ---------- Rate limiters ----------------------------------------- */
+
+const sessionLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please try again later.' },
+});
+
+const verifyLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many verification attempts. Please try again later.' },
+});
+
 /* ---------- 1. Create a session (called by the Discord bot) ------- */
 
 const MAX_SESSIONS = 10_000;
 
-app.post('/api/session', (req: Request, res: Response) => {
-  // Only the bot process should call this endpoint
-  const botSecret = process.env.BOT_API_SECRET;
-  if (botSecret && req.headers['x-bot-secret'] !== botSecret) {
-    return res.status(403).json({ error: 'Forbidden' });
-  }
+app.post('/api/session', sessionLimiter, (req: Request, res: Response) => {
+  // Only the bot process should call this endpoint — fail closed
+  if (!requireBotSecret(req, res)) return;
 
   const { discordUserId } = req.body as { discordUserId?: string };
   if (!discordUserId) {
@@ -127,7 +161,7 @@ app.get('/api/challenge/:sessionId', (req: Request, res: Response) => {
 
 /* ---------- 3. Verify signature (called by web page) ------------- */
 
-app.post('/api/verify', async (req: Request, res: Response) => {
+app.post('/api/verify', verifyLimiter, async (req: Request, res: Response) => {
   const { sessionId, signature, walletAddress, polymarketAddress } = req.body as {
     sessionId?: string;
     signature?: string;
@@ -224,10 +258,8 @@ app.get('/api/trade-session/:sessionId', (req: Request, res: Response) => {
 });
 
 app.post('/api/trade-session/:sessionId/consume', (req: Request, res: Response) => {
-  const botSecret = process.env.BOT_API_SECRET;
-  if (botSecret && req.headers['x-bot-secret'] !== botSecret) {
-    return res.status(403).json({ error: 'Forbidden' });
-  }
+  // Fail closed — require BOT_API_SECRET
+  if (!requireBotSecret(req, res)) return;
 
   const sessionId = req.params.sessionId as string;
   const session = tradeSessions.get(sessionId);
@@ -252,6 +284,9 @@ app.post('/api/trade-session/:sessionId/consume', (req: Request, res: Response) 
 /* ---------- Start ------------------------------------------------- */
 
 export function startAuthServer(): void {
+  if (!BOT_API_SECRET) {
+    console.warn('⚠️  WARNING: BOT_API_SECRET is not set. Protected endpoints will reject all requests.');
+  }
   app.listen(AUTH_PORT, () => {
     console.log(`🔗 Auth server running at http://localhost:${AUTH_PORT}`);
   });

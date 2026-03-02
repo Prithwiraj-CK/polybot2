@@ -84,7 +84,10 @@ const SPORT_ALIASES: Record<string, string[]> = {
 	ucl: ['champions league', 'ucl', 'uefa champions'],
 	uel: ['europa league', 'uel'],
 	mls: ['mls', 'major league soccer'],
-	ipl: ['ipl', 'indian premier league', 'cricket'],
+	ipl: ['ipl', 'indian premier league', 'cricket', 'odi', 't20', 'test match',
+		'australia', 'aus', 'india', 'ind', 'england', 'eng', 'south africa', 'sa',
+		'new zealand', 'nz', 'pakistan', 'pak', 'sri lanka', 'sl', 'west indies', 'wi',
+		'bangladesh', 'ban', 'afghanistan', 'afg'],
 	ufc: ['ufc', 'mma', 'mixed martial arts', 'ultimate fighting'],
 	atp: ['atp', 'tennis', 'djokovic', 'nadal', 'federer', 'alcaraz', 'sinner'],
 	wta: ['wta', 'women tennis'],
@@ -98,6 +101,43 @@ const SPORT_ALIASES: Record<string, string[]> = {
  * These are used to search events by tag name when sport detection matches.
  */
 const ESPORTS_TAG_LABELS = ['esports', 'lol', 'league of legends', 'cs2', 'dota2', 'valorant'];
+
+/**
+ * Category keywords → Gamma API tag slugs.
+ * "show me politics" → fetch events tagged "politics".
+ */
+const CATEGORY_TAG_MAP: Record<string, string> = {
+	politics: 'politics', political: 'politics', election: 'politics', elections: 'politics',
+	crypto: 'crypto', cryptocurrency: 'crypto', bitcoin: 'crypto', btc: 'crypto', ethereum: 'crypto', eth: 'crypto',
+	sports: 'sports', sport: 'sports',
+	finance: 'finance', financial: 'finance', stocks: 'finance', stock: 'finance', market: 'finance',
+	geopolitics: 'geopolitics', geopolitical: 'geopolitics', war: 'geopolitics', conflict: 'geopolitics',
+	tech: 'tech', technology: 'tech', ai: 'tech', artificial: 'tech',
+	culture: 'culture', entertainment: 'culture', movies: 'culture', oscars: 'culture', music: 'culture',
+	world: 'world', global: 'world', international: 'world',
+	economy: 'economy', economic: 'economy', gdp: 'economy', inflation: 'economy', recession: 'economy',
+};
+
+/** Words that indicate the user wants trending / most popular markets. */
+const TRENDING_KEYWORDS = new Set([
+	'trending', 'trend', 'trends', 'hot', 'popular', 'biggest', 'top',
+	'breaking', 'viral', 'movers', 'active', 'busiest',
+]);
+
+/** Words that indicate the user wants recently created markets. */
+const RECENCY_KEYWORDS = new Set([
+	'new', 'newest', 'latest', 'recent', 'fresh', 'just', 'launched', 'today',
+]);
+
+/** Cache for Polymarket tags (from /tags endpoint). */
+interface TagEntry {
+	readonly id: string;
+	readonly label: string;
+	readonly slug: string;
+}
+let tagsCache: TagEntry[] | null = null;
+let tagsCacheExpiresAt = 0;
+const TAGS_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 /**
  * Raw market shape returned by the Gamma API.
@@ -115,6 +155,9 @@ interface GammaMarketResponse {
 	readonly outcomes?: string | string[]; // Gamma markets use JSON string; events may send string[]
 	readonly outcomePrices?: string | string[]; // JSON string or array of price strings
 	readonly volume?: string | number;
+	readonly volume24hr?: number;       // 24-hour trading volume (used for trending/ranking)
+	readonly competitive?: number;       // competitiveness score 0–1 (closer to 0.5 = more interesting)
+	readonly featured?: boolean;         // Polymarket staff-featured market
 	readonly accepting_orders?: boolean;
 	readonly events?: ReadonlyArray<{ readonly slug?: string }>; // parent event(s) — slug used for Polymarket event URLs
 }
@@ -172,10 +215,58 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 		}
 
 		console.log(`[search] Raw query: "${normalized}"`);
+		const lower = normalized.toLowerCase();
+		const queryWords = lower.replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length >= 2);
+
+		// ──────────────────────────────────────────────────────────────────────
+		// 1. TRENDING / HOT — "what's trending?", "top markets", "most popular"
+		// ──────────────────────────────────────────────────────────────────────
+		if (queryWords.some(w => TRENDING_KEYWORDS.has(w))) {
+			console.log(`[search] Trending query detected`);
+			const trending = await this.fetchTrendingEvents(15);
+			if (trending.length > 0) {
+				console.log(`[search] Returning ${trending.length} trending markets`);
+				return trending;
+			}
+		}
+
+		// ──────────────────────────────────────────────────────────────────────
+		// 2. RECENCY — "what's new?", "latest markets", "anything fresh?"
+		// ──────────────────────────────────────────────────────────────────────
+		if (queryWords.some(w => RECENCY_KEYWORDS.has(w)) && !queryWords.some(w => TRENDING_KEYWORDS.has(w))) {
+			console.log(`[search] Recency query detected`);
+			const recent = await this.fetchNewEvents(15);
+			if (recent.length > 0) {
+				console.log(`[search] Returning ${recent.length} new markets`);
+				return recent;
+			}
+		}
+
+		// ──────────────────────────────────────────────────────────────────────
+		// 3. CATEGORY — "show me politics", "crypto markets", "sports"
+		// ──────────────────────────────────────────────────────────────────────
+		for (const w of queryWords) {
+			const tagSlug = CATEGORY_TAG_MAP[w];
+			if (tagSlug) {
+				console.log(`[search] Category detected: "${w}" → tag "${tagSlug}"`);
+				const catResults = await this.fetchEventsByTag(tagSlug, 20);
+				if (catResults.length > 0) {
+					console.log(`[search] Returning ${catResults.length} category markets for "${tagSlug}"`);
+					return catResults;
+				}
+			}
+		}
 
 		// Use AI to extract search keywords from conversational queries
 		const searchTerms = await extractSearchKeywords(normalized);
 		console.log(`[search] AI-extracted keywords: "${searchTerms}"`);
+
+		// If AI returned empty (vague query like "anything interesting?"), show trending
+		if (searchTerms.trim().length === 0) {
+			console.log(`[search] Empty keywords from AI, falling back to trending`);
+			const trending = await this.fetchTrendingEvents(15);
+			if (trending.length > 0) return trending;
+		}
 
 		// Try events endpoint with multiple slug candidates
 		let eventMarkets: Market[] = [];
@@ -246,6 +337,19 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 			return eventMarkets;
 		}
 
+		// ──────────────────────────────────────────────────────────────────────
+		// 4. SUB-TAG MATCHING — fuzzy-match query against Polymarket's /tags
+		// ──────────────────────────────────────────────────────────────────────
+		const tagMatch = await this.matchQueryToTag(searchTerms);
+		if (tagMatch) {
+			console.log(`[search] Tag match: "${searchTerms}" → tag "${tagMatch}"`);
+			const tagResults = await this.fetchEventsByTag(tagMatch, 15);
+			if (tagResults.length > 0) {
+				console.log(`[search] Returning ${tagResults.length} markets for tag "${tagMatch}"`);
+				return tagResults;
+			}
+		}
+
 		// Sports-aware search: detect if the query matches a known sport/esports category
 		// and search events by series_id with keyword matching.
 		console.log(`[search] Attempting sports-aware search for: "${searchTerms}"`);
@@ -308,7 +412,7 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 				deduped.set(m.id, m);
 			}
 		}
-		const results = [...deduped.values()];
+		const results = rankMarkets([...deduped.values()]);
 		console.log(`[search] Results: slug=${slugResults.length} tag=${tagResults.length} text=${textResults.length} total=${results.length}`);
 		return results;
 	}
@@ -332,6 +436,135 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 			return mapped;
 		} catch {
 			return [];
+		}
+	}
+
+	// ══════════════════════════════════════════════════════════════════════
+	// NEW: Trending, category, recency, and tag-based fetchers
+	// ══════════════════════════════════════════════════════════════════════
+
+	/**
+	 * Fetches top events sorted by 24-hour volume (trending/hot markets).
+	 */
+	private async fetchTrendingEvents(limit: number): Promise<Market[]> {
+		try {
+			const url = `${GAMMA_API_BASE}/events?closed=false&order=volume24hr&ascending=false&limit=${limit}`;
+			const resp = await fetch(url);
+			if (!resp.ok) return [];
+			const events = await resp.json();
+			if (!Array.isArray(events)) return [];
+			const markets: Market[] = [];
+			for (const evt of events) {
+				if (Array.isArray(evt.markets)) {
+					// Take only the first market from each event for variety
+					const mapped = mapGammaMarketToMarket(evt.markets[0]);
+					if (mapped) markets.push(mapped);
+				}
+			}
+			return markets;
+		} catch {
+			return [];
+		}
+	}
+
+	/**
+	 * Fetches newest events sorted by creation date.
+	 */
+	private async fetchNewEvents(limit: number): Promise<Market[]> {
+		try {
+			const url = `${GAMMA_API_BASE}/events?closed=false&order=createdAt&ascending=false&limit=${limit}`;
+			const resp = await fetch(url);
+			if (!resp.ok) return [];
+			const events = await resp.json();
+			if (!Array.isArray(events)) return [];
+			const markets: Market[] = [];
+			for (const evt of events) {
+				if (Array.isArray(evt.markets)) {
+					const mapped = mapGammaMarketToMarket(evt.markets[0]);
+					if (mapped) markets.push(mapped);
+				}
+			}
+			return markets;
+		} catch {
+			return [];
+		}
+	}
+
+	/**
+	 * Fetches events for a specific tag slug, sorted by volume.
+	 */
+	private async fetchEventsByTag(tagSlug: string, limit: number): Promise<Market[]> {
+		try {
+			const url = `${GAMMA_API_BASE}/events?closed=false&tag_slug=${encodeURIComponent(tagSlug)}&order=volume24hr&ascending=false&limit=${limit}`;
+			const resp = await fetch(url);
+			if (!resp.ok) return [];
+			const events = await resp.json();
+			if (!Array.isArray(events)) return [];
+			const markets: Market[] = [];
+			for (const evt of events) {
+				if (Array.isArray(evt.markets)) {
+					const mapped = mapGammaMarketToMarket(evt.markets[0]);
+					if (mapped) markets.push(mapped);
+				}
+			}
+			return markets;
+		} catch {
+			return [];
+		}
+	}
+
+	/**
+	 * Fuzzy-matches search query words against the full Polymarket /tags list.
+	 * Returns the best matching tag slug, or null if no match.
+	 */
+	private async matchQueryToTag(query: string): Promise<string | null> {
+		const tags = await this.fetchAllTags();
+		if (tags.length === 0) return null;
+
+		const words = query.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length >= 3);
+		if (words.length === 0) return null;
+
+		// Try exact label match first
+		for (const tag of tags) {
+			const label = tag.label.toLowerCase();
+			if (words.includes(label) || query.toLowerCase().includes(label)) {
+				return tag.slug;
+			}
+		}
+		// Try partial word match (e.g. "tariff" matches "Tariffs")
+		for (const tag of tags) {
+			const label = tag.label.toLowerCase();
+			for (const w of words) {
+				if (label.startsWith(w) && w.length >= 4) {
+					return tag.slug;
+				}
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Fetches and caches all Polymarket tags (1-hour TTL).
+	 */
+	private async fetchAllTags(): Promise<TagEntry[]> {
+		if (tagsCache && Date.now() < tagsCacheExpiresAt) {
+			return tagsCache;
+		}
+		try {
+			const resp = await fetch(`${GAMMA_API_BASE}/tags`);
+			if (!resp.ok) return tagsCache ?? [];
+			const raw = await resp.json();
+			if (!Array.isArray(raw)) return [];
+			tagsCache = raw.map((t: Record<string, unknown>) => ({
+				id: String(t.id ?? ''),
+				label: String(t.label ?? ''),
+				slug: String(t.slug ?? ''),
+			}));
+			tagsCacheExpiresAt = Date.now() + TAGS_CACHE_TTL_MS;
+			console.log(`[tags] Cached ${tagsCache.length} tags`);
+			return tagsCache;
+		} catch {
+			return tagsCache ?? [];
 		}
 	}
 
@@ -657,6 +890,20 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
  */
 
 /**
+ * Ranks markets by volume (higher = better), with active markets first.
+ * Applied to all fallback results to surface the most interesting markets.
+ */
+function rankMarkets(markets: Market[]): Market[] {
+	return markets.sort((a, b) => {
+		const rankStatus = (s: Market['status']): number => s === 'active' ? 0 : s === 'paused' ? 1 : 2;
+		const statusDiff = rankStatus(a.status) - rankStatus(b.status);
+		if (statusDiff !== 0) return statusDiff;
+		const volScore = (m: Market) => Math.log10(Math.max(m.volume || 1, 1));
+		return volScore(b) - volScore(a);
+	});
+}
+
+/**
  * Cleans search keywords by removing conversational noise words.
  * Produces a clean topic string suitable for API queries.
  *
@@ -740,18 +987,20 @@ function detectSportsFromQuery(query: string): string[] {
 		}
 	}
 
-	// If the query contains generic sport/esports terms, check for "vs" pattern
-	// which strongly suggests a match-specific sports query
+	// If the query contains a "vs" pattern, try matching query WORDS
+	// against known sport aliases as whole words.
+	// (Previously used 3-char prefix matching which caused 'live' → 'liverpool' → EPL)
 	if (matches.length === 0 && (lower.includes(' vs ') || lower.includes(' versus '))) {
-		// Try to match against all sport aliases more loosely
+		const queryWords = lower.replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length >= 2);
 		for (const [sportCode, aliases] of Object.entries(SPORT_ALIASES)) {
 			for (const alias of aliases) {
-				if (lower.includes(alias.slice(0, 3)) && alias.length >= 3) {
+				// Only match single-word aliases as exact word matches
+				if (!alias.includes(' ') && queryWords.includes(alias)) {
 					if (!matches.includes(sportCode)) matches.push(sportCode);
 					break;
 				}
 			}
-			if (matches.length > 0) break; // found at least one loose match
+			if (matches.length > 0) break;
 		}
 	}
 
@@ -804,6 +1053,13 @@ async function extractSearchKeywords(message: string): Promise<string> {
 				'  "current live status of KTC vs DRXC market" → KTC vs DRXC',
 				'  "hi can you check about KTC vs DRXC market" → KTC vs DRXC',
 				'  "what are the lakers celtics odds" → lakers celtics',
+				'  "what\'s trending right now?" → ',
+				'  "anything interesting today?" → ',
+				'  "show me politics" → politics',
+				'  "what\'s happening in crypto?" → crypto',
+				'  "any new markets?" → ',
+				'If the message is vague with no specific topic (e.g. "what\'s hot?", "anything interesting?"), return an EMPTY string.',
+				'If the message asks about a category (politics, crypto, sports, etc.), return just that category word.',
 			].join('\n'),
 			temperature: 0,
 			maxOutputTokens: 50,

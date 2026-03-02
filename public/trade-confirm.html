@@ -1,11 +1,17 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>PolyBot — Confirm Trade</title>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: #0f1424;
@@ -16,6 +22,7 @@
       justify-content: center;
       padding: 20px;
     }
+
     .card {
       width: 100%;
       max-width: 620px;
@@ -25,8 +32,17 @@
       padding: 24px;
       box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
     }
-    h1 { font-size: 24px; margin-bottom: 8px; }
-    .sub { color: #a7b0cf; margin-bottom: 18px; }
+
+    h1 {
+      font-size: 24px;
+      margin-bottom: 8px;
+    }
+
+    .sub {
+      color: #a7b0cf;
+      margin-bottom: 18px;
+    }
+
     .panel {
       background: #111a31;
       border: 1px solid #2a355d;
@@ -35,9 +51,21 @@
       margin-bottom: 18px;
       line-height: 1.6;
     }
-    .label { color: #9aa6d3; }
-    .value { color: #ffffff; font-weight: 600; }
-    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+
+    .label {
+      color: #9aa6d3;
+    }
+
+    .value {
+      color: #ffffff;
+      font-weight: 600;
+    }
+
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+    }
+
     .btn {
       display: inline-block;
       width: 100%;
@@ -48,8 +76,18 @@
       font-size: 15px;
       font-weight: 700;
     }
-    .btn-primary { background: linear-gradient(135deg, #6d7bff, #8a57dd); color: #fff; }
-    .btn-secondary { background: #25315a; color: #dfe4ff; margin-top: 10px; }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #6d7bff, #8a57dd);
+      color: #fff;
+    }
+
+    .btn-secondary {
+      background: #25315a;
+      color: #dfe4ff;
+      margin-top: 10px;
+    }
+
     .status {
       margin-top: 14px;
       border-radius: 10px;
@@ -57,12 +95,28 @@
       display: none;
       line-height: 1.5;
     }
-    .status.show { display: block; }
-    .status.error { background: #44212d; color: #ff9eb8; }
-    .status.ok { background: #1f3b2b; color: #9dffc2; }
-    .status.info { background: #22324f; color: #a9c7ff; }
+
+    .status.show {
+      display: block;
+    }
+
+    .status.error {
+      background: #44212d;
+      color: #ff9eb8;
+    }
+
+    .status.ok {
+      background: #1f3b2b;
+      color: #9dffc2;
+    }
+
+    .status.info {
+      background: #22324f;
+      color: #a9c7ff;
+    }
   </style>
 </head>
+
 <body>
   <div class="card">
     <h1>🧾 Confirm Trade</h1>
@@ -100,7 +154,7 @@
 
     function showStatus(type, message) {
       statusEl.className = `status show ${type}`;
-      statusEl.innerHTML = message;
+      statusEl.textContent = message;
     }
 
     async function resolveMarketUrlFromCondition(conditionId) {
@@ -180,4 +234,5 @@
     loadSession();
   </script>
 </body>
+
 </html>

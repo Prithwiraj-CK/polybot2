@@ -205,7 +205,7 @@ client.on('messageCreate', async (message) => {
         content: '⏰ **Trade confirmation timed out.** Place the order again if you\'d like to proceed.',
         embeds: [],
         components: [],
-      }).catch(() => {});
+      }).catch(() => { });
     }
   } catch {
     await message.reply('Unable to process your request right now. Please try again.');
@@ -218,21 +218,29 @@ function isDiscordConnectTimeout(error: unknown): boolean {
 }
 
 // ---- Login ----
-async function loginWithRetry(delayMs = 5000): Promise<void> {
+const MAX_LOGIN_ATTEMPTS = 10;
+
+async function loginWithRetry(initialDelayMs = 5000): Promise<void> {
   const botToken = process.env.DISCORD_BOT_TOKEN;
   if (!botToken) {
     throw new Error('Missing DISCORD_BOT_TOKEN in environment');
   }
 
   let attempt = 0;
-  while (true) {
+  let delayMs = initialDelayMs;
+  while (attempt < MAX_LOGIN_ATTEMPTS) {
     attempt += 1;
     try {
       await client.login(botToken);
       return;
     } catch (error) {
-      console.error(`Discord login failed (attempt ${attempt}):`, error instanceof Error ? error.message : 'unknown error');
+      console.error(`Discord login failed (attempt ${attempt}/${MAX_LOGIN_ATTEMPTS}):`, error instanceof Error ? error.message : 'unknown error');
+      if (attempt >= MAX_LOGIN_ATTEMPTS) {
+        console.error('❌ FATAL: Max login attempts exceeded. Exiting.');
+        process.exit(1);
+      }
       await new Promise((resolve) => setTimeout(resolve, delayMs));
+      delayMs = Math.min(delayMs * 2, 60_000); // exponential backoff, cap at 60s
     }
   }
 }

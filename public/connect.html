@@ -1,11 +1,17 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PolyBot — Connect Wallet</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: #1a1a2e;
@@ -15,6 +21,7 @@
       align-items: center;
       min-height: 100vh;
     }
+
     .card {
       background: #16213e;
       border-radius: 16px;
@@ -22,20 +29,33 @@
       max-width: 500px;
       width: 90%;
       text-align: center;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
     }
-    .card h1 { font-size: 24px; margin-bottom: 8px; color: #fff; }
-    .card p { color: #a0a0b8; margin-bottom: 16px; font-size: 14px; }
+
+    .card h1 {
+      font-size: 24px;
+      margin-bottom: 8px;
+      color: #fff;
+    }
+
+    .card p {
+      color: #a0a0b8;
+      margin-bottom: 16px;
+      font-size: 14px;
+    }
+
     .input-group {
       margin-bottom: 16px;
       text-align: left;
     }
+
     .input-group label {
       display: block;
       font-size: 13px;
       color: #8888aa;
       margin-bottom: 6px;
     }
+
     .input-group input {
       width: 100%;
       padding: 12px;
@@ -48,13 +68,21 @@
       outline: none;
       transition: border-color 0.2s;
     }
-    .input-group input:focus { border-color: #667eea; }
-    .input-group input::placeholder { color: #4a4a6a; }
+
+    .input-group input:focus {
+      border-color: #667eea;
+    }
+
+    .input-group input::placeholder {
+      color: #4a4a6a;
+    }
+
     .input-group .hint {
       font-size: 11px;
       color: #6a6a8a;
       margin-top: 4px;
     }
+
     .btn {
       display: inline-block;
       padding: 14px 32px;
@@ -66,12 +94,23 @@
       transition: all 0.2s;
       width: 100%;
     }
+
     .btn-primary {
       background: linear-gradient(135deg, #667eea, #764ba2);
       color: #fff;
     }
-    .btn-primary:hover { opacity: 0.9; transform: translateY(-1px); }
-    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    .btn-primary:hover {
+      opacity: 0.9;
+      transform: translateY(-1px);
+    }
+
+    .btn-primary:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
     .status {
       margin-top: 20px;
       padding: 12px;
@@ -79,9 +118,25 @@
       font-size: 14px;
       display: none;
     }
-    .status.error { display: block; background: #3d1f1f; color: #ff6b6b; }
-    .status.success { display: block; background: #1f3d2a; color: #6bff8a; }
-    .status.info { display: block; background: #1f2d3d; color: #6bb3ff; }
+
+    .status.error {
+      display: block;
+      background: #3d1f1f;
+      color: #ff6b6b;
+    }
+
+    .status.success {
+      display: block;
+      background: #1f3d2a;
+      color: #6bff8a;
+    }
+
+    .status.info {
+      display: block;
+      background: #1f2d3d;
+      color: #6bb3ff;
+    }
+
     .wallet-addr {
       margin-top: 12px;
       font-family: monospace;
@@ -89,9 +144,11 @@
       color: #8888aa;
       word-break: break-all;
     }
+
     .spinner {
       display: inline-block;
-      width: 16px; height: 16px;
+      width: 16px;
+      height: 16px;
       border: 2px solid #fff;
       border-top-color: transparent;
       border-radius: 50%;
@@ -99,7 +156,13 @@
       vertical-align: middle;
       margin-right: 8px;
     }
-    @keyframes spin { to { transform: rotate(360deg); } }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
     .step-info {
       background: #0f1629;
       border-radius: 8px;
@@ -110,9 +173,13 @@
       color: #8888bb;
       line-height: 1.6;
     }
-    .step-info b { color: #c0c0d8; }
+
+    .step-info b {
+      color: #c0c0d8;
+    }
   </style>
 </head>
+
 <body>
   <div class="card">
     <h1>🔗 PolyBot</h1>
@@ -148,7 +215,16 @@
 
     function showStatus(msg, type) {
       statusEl.className = 'status ' + type;
-      statusEl.innerHTML = msg;
+      statusEl.textContent = msg;
+    }
+
+    function showStatusWithSpinner(msg, type) {
+      statusEl.className = 'status ' + type;
+      statusEl.textContent = '';
+      const spinner = document.createElement('span');
+      spinner.className = 'spinner';
+      statusEl.appendChild(spinner);
+      statusEl.appendChild(document.createTextNode(' ' + msg));
     }
 
     if (!sessionId) {
@@ -168,21 +244,27 @@
       connectBtn.disabled = true;
 
       if (typeof window.ethereum === 'undefined') {
-        showStatus(
-          'No wallet detected. Please install <a href="https://metamask.io" target="_blank" style="color:#6bb3ff">MetaMask</a> or another EVM wallet.',
-          'error'
-        );
+        statusEl.className = 'status error';
+        statusEl.textContent = '';
+        statusEl.appendChild(document.createTextNode('No wallet detected. Please install '));
+        const link = document.createElement('a');
+        link.href = 'https://metamask.io';
+        link.target = '_blank';
+        link.style.color = '#6bb3ff';
+        link.textContent = 'MetaMask';
+        statusEl.appendChild(link);
+        statusEl.appendChild(document.createTextNode(' or another EVM wallet.'));
         connectBtn.disabled = false;
         return;
       }
 
       try {
-        showStatus('<span class="spinner"></span> Connecting wallet...', 'info');
+        showStatusWithSpinner('Connecting wallet...', 'info');
 
         const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
         const signerAddress = accounts[0];
 
-        showStatus('<span class="spinner"></span> Fetching challenge...', 'info');
+        showStatusWithSpinner('Fetching challenge...', 'info');
 
         const challengeRes = await fetch(`/api/challenge/${sessionId}`);
         if (!challengeRes.ok) {
@@ -191,7 +273,7 @@
         }
         const { challengeMessage } = await challengeRes.json();
 
-        showStatus('<span class="spinner"></span> Please sign the message in your wallet...', 'info');
+        showStatusWithSpinner('Please sign the message in your wallet...', 'info');
 
         const signature = await window.ethereum.request({
           method: 'personal_sign',
@@ -222,9 +304,7 @@
           '✅ Wallet connected successfully!<br>You can close this tab and return to Discord.',
           'success'
         );
-        walletEl.innerHTML =
-          '<b>Polymarket:</b> ' + result.polymarketAddress + '<br>' +
-          '<b>Signer:</b> ' + result.signerAddress;
+        walletEl.textContent = 'Polymarket: ' + result.polymarketAddress + ' | Signer: ' + result.signerAddress;
 
       } catch (err) {
         if (err.code === 4001) {
@@ -237,4 +317,5 @@
     }
   </script>
 </body>
+
 </html>
