@@ -9,7 +9,12 @@
     "stop": "pm2 stop polybot",
     "restart": "pm2 restart polybot",
     "logs": "pm2 logs polybot",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "vitest run tests/integration/search.test.ts",
+    "test:bot": "vitest run tests/integration/bot-search.test.ts",
+    "test:all": "vitest run tests/integration/",
+    "test:browser": "playwright test tests/browser/verify.spec.ts",
+    "test:sync": "npx tsx tests/sync-categories.ts",
+    "test:verify": "npm run test:sync && npm run test:all && npm run test:browser"
   },
   "repository": {
     "type": "git",
@@ -37,12 +42,14 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/ioredis": "^4.28.10",
     "@types/node": "^25.3.0",
     "ts-node": "^10.9.2",
     "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
   }
 }

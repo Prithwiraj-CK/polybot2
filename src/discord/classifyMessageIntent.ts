@@ -16,11 +16,18 @@ export type MessageIntentPipeline = 'READ' | 'WRITE';
 const WRITE_ACTION_VERB_PATTERN = /\b(bet|place|buy|sell|trade)\b/i;
 
 /**
+ * "market in $N" is a common trade shorthand: "market in $1 Bitcoin up or down on down".
+ * Detected separately since "market" alone would over-match read queries.
+ */
+const MARKET_IN_TRADE_PATTERN = /\bmarket\s+in\b/i;
+
+/**
  * Explicit monetary references required for WRITE routing.
- * This only detects presence of money references; it does not parse amounts.
+ * Matches: $5, $ 5, 5$, 5 dollars, 5 usd, 1.50 bucks
+ * Also matches N-before-$ e.g. "1$" which users commonly write.
  */
 const MONEY_REFERENCE_PATTERN =
-	/(\$\s*\d+(?:\.\d{1,2})?)|(\b\d+(?:\.\d{1,2})?\s*(dollars?|usd|bucks?)\b)/i;
+	/(\$\s*\d+(?:\.\d{1,2})?)|(\b\d+(?:\.\d{1,2})?\s*\$(?!\w))|(\b\d+(?:\.\d{1,2})?\s*(dollars?|usd|bucks?)\b)/i;
 
 /**
  * Conservative question marker pattern.
@@ -63,8 +70,13 @@ export function classifyMessageIntent(message: string): MessageIntentPipeline {
 
 	const hasWriteActionVerb = WRITE_ACTION_VERB_PATTERN.test(normalized);
 	const hasMonetaryReference = MONEY_REFERENCE_PATTERN.test(normalized);
+	const hasMarketInTrade = MARKET_IN_TRADE_PATTERN.test(normalized) && hasMonetaryReference;
 
 	if (hasWriteActionVerb && hasMonetaryReference) {
+		return 'WRITE';
+	}
+
+	if (hasMarketInTrade) {
 		return 'WRITE';
 	}
 

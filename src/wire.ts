@@ -229,8 +229,8 @@ class ClobPolymarketExecutionGateway implements PolymarketExecutionGateway {
 
     // 3. Amount in dollars (CLOB expects dollars for BUY, shares for SELL)
     const amountDollars = params.amountCents / 100;
-    if (amountDollars < 5) {
-      throw { code: 'INVALID_AMOUNT', message: 'Polymarket minimum order size is $5' };
+    if (amountDollars < 1) {
+      throw { code: 'INVALID_AMOUNT', message: 'Polymarket minimum order size is $1' };
     }
 
     const side = params.action === 'SELL' ? Side.SELL : Side.BUY;

@@ -168,12 +168,36 @@ export class DiscordMessageRouter {
 
 	private async handleRead(message: string): Promise<string> {
 		console.log(`[router] handleRead: "${message}"`);
+
+		// Detect greetings / casual chat with no market query intent.
+		// Skip market search entirely so the bot responds conversationally
+		// without appending random unrelated Olympus links.
+		if (isCasualChat(message)) {
+			console.log(`[router] Casual chat detected, skipping market search`);
+			const liveMarkets = await this.deps.readService.listLiveMarkets();
+			return this.readExplainer({
+				message,
+				liveMarketCount: liveMarkets.length,
+				sampleMarketSummaries: [],
+				searchResultsCount: 0,
+			});
+		}
+
 		const liveMarkets = await this.deps.readService.listLiveMarkets();
 		console.log(`[router] Live markets: ${liveMarkets.length}`);
 		const searchResults = await this.deps.readService.searchMarketsByText(message);
 		console.log(`[router] Search results: ${searchResults.length}`);
-		const sampleSource = searchResults.length > 0 ? searchResults : liveMarkets;
-		const sampleSummaries = await summarizeUpToThree(this.deps.readService, sampleSource, message);
+
+		// Only show search results if we actually found any.
+		// When search returns 0 results, pass an empty sample list so the AI
+		// can honestly tell the user we couldn't find a match, instead of
+		// showing random unrelated trending markets (like StarCraft II for an NBA query).
+		let sampleSummaries;
+		if (searchResults.length > 0) {
+			sampleSummaries = summarizeUpToThree(searchResults, message);
+		} else {
+			sampleSummaries = [];
+		}
 		console.log(`[router] Sample summaries: ${sampleSummaries.map(s => s.question).join(' | ')}`);
 
 		return this.readExplainer({
@@ -445,7 +469,9 @@ export class DiscordMessageRouter {
 			return { type: 'text', content: [`**Your last ${limit} trades:**`, ...lines].join('\n') };
 		}
 
+		// Support both "$1" and "1$" amount formats (users often write amount then $)
 		const amountMatch = normalized.match(/\$\s*(\d+(?:\.\d{1,2})?)/)
+			?? normalized.match(/\b(\d+(?:\.\d{1,2})?)\s*\$(?!\w)/)
 			?? normalized.match(/\b(\d+(?:\.\d{1,2})?)\s*(dollars?|usd|bucks?)\b/);
 
 		// Detect trade action: sell/exit/close => SELL, everything else => BUY
@@ -453,14 +479,16 @@ export class DiscordMessageRouter {
 		const action: TradeAction = isSell ? 'SELL' : 'BUY';
 
 		// Detect outcome: up/yes/long => YES, down/no/short => NO
-		// For sells, buy/sell words refer to the action, not the outcome
-		const outcome: 'YES' | 'NO' | null = /\b(up|yes|long)\b/.test(normalized)
-			? 'YES'
-			: /\b(down|no|short)\b/.test(normalized)
-				? 'NO'
-				: null;
+		// Use the LAST direction word so "bitcoin up or down ... on down" resolves to DOWN, not UP
+		const directionMatches = [...normalized.matchAll(/\b(up|yes|long|down|no|short)\b/g)];
+		const lastDir = directionMatches.length > 0 ? directionMatches[directionMatches.length - 1][1] : null;
+		const outcome: 'YES' | 'NO' | null =
+			lastDir && /^(up|yes|long)$/.test(lastDir) ? 'YES' :
+			lastDir && /^(down|no|short)$/.test(lastDir) ? 'NO' :
+			null;
 
-		if (!amountMatch || !outcome || !/\b(bet|buy|sell|trade|market|exit|close)\b/.test(normalized)) {
+		const isMarketInCommand = /\bmarket\s+in\b/i.test(message);
+		if (!amountMatch || (!outcome && !isMarketInCommand) || !/\b(bet|buy|sell|trade|market|exit|close)\b/.test(normalized)) {
 			return null;
 		}
 
@@ -470,41 +498,102 @@ export class DiscordMessageRouter {
 		}
 
 		const amountCents = Math.round(amountDollars * 100);
+		// resolvedOutcome starts from direction-word detection; may be overridden by market outcome matching below
+		let resolvedOutcome: 'YES' | 'NO' | null = outcome;
+
 		const assetQuery = /\b(bitcoin|btc)\b/.test(normalized)
 			? 'bitcoin up or down'
 			: /\b(ethereum|eth)\b/.test(normalized)
 				? 'ethereum up or down'
 				: null;
 
-		if (!assetQuery) {
-			return null;
-		}
+		let selectedMarket: Market | null = null;
+		let selectedSlug: string | null = null;
 
-		const timeframe = /\b(5|five)\s*(m|min|minute)\b/.test(normalized)
-			? '5 minute'
-			: /\b(15|fifteen)\s*(m|min|minute)\b/.test(normalized)
-				? '15 minute'
-				: '';
+		if (assetQuery) {
+			// --- Crypto up/down timed markets path ---
+			const timeframe = /\b(5|five)\s*(m|min|minute)\b/.test(normalized)
+				? '5 minute'
+				: /\b(15|fifteen)\s*(m|min|minute)\b/.test(normalized)
+					? '15 minute'
+					: '';
 
-		// Try direct Gamma events API slug-based resolution first (reliable for timed markets)
-		const timedResult = await tryResolveTimedUpDownMarket(this.deps.readService, message);
-		let selectedMarket: Market | null = timedResult?.market ?? null;
-		let selectedSlug: string | null = timedResult?.slug ?? null;
+			// Try direct Gamma events API slug-based resolution first (reliable for timed markets)
+			const timedResult = await tryResolveTimedUpDownMarket(this.deps.readService, message);
+			selectedMarket = timedResult?.market ?? null;
+			selectedSlug = timedResult?.slug ?? null;
 
-		if (!selectedMarket) {
-			// Fallback to text search
-			const candidates = await this.deps.readService.searchMarketsByText(assetQuery);
-			selectedMarket = pickBestNaturalTradeMarket(candidates, normalized, timeframe);
+			if (!selectedMarket) {
+				const candidates = await this.deps.readService.searchMarketsByText(assetQuery);
+				selectedMarket = pickBestNaturalTradeMarket(candidates, normalized, timeframe);
+			}
+		} else if (isMarketInCommand) {
+			// --- Generic "market in $X [query] on [label]" path ---
+			// Extract raw outcome label from "on [label]" at the end of the message
+			const rawLabel = normalized.match(/\bon\s+([a-z0-9][a-z0-9 \-]+?)\s*$/)?.[1]?.trim() ?? null;
+
+			// Try standard direction words first
+			if (rawLabel) {
+				if (/^(up|yes|long)$/.test(rawLabel)) resolvedOutcome = 'YES';
+				else if (/^(down|no|short)$/.test(rawLabel)) resolvedOutcome = 'NO';
+			}
+
+			// Build market search query: strip "market in", amount, and "on [label]" suffix
+			let queryStr = message.trim();
+			queryStr = queryStr.replace(/\bmarket\s+in\b/i, '').trim();
+			queryStr = queryStr.replace(/\$\s*\d+(?:\.\d{1,2})?/, '').trim();
+			queryStr = queryStr.replace(/\b\d+(?:\.\d{1,2})?\s*\$(?!\w)/, '').trim();
+			queryStr = queryStr.replace(/\b\d+(?:\.\d{1,2})?\s*(dollars?|usd|bucks?)\b/i, '').trim();
+			if (rawLabel) {
+				const onSuffix = ` on ${rawLabel}`;
+				const onIdx = queryStr.toLowerCase().lastIndexOf(onSuffix);
+				if (onIdx !== -1) queryStr = queryStr.substring(0, onIdx).trim();
+			}
+
+			if (!queryStr) return null;
+
+			const candidates = await this.deps.readService.searchMarketsByText(queryStr);
+			selectedMarket = candidates[0] ?? null;
+
+			// If outcome still unresolved, fuzzy-match rawLabel against market outcome tokens
+			// In binary markets: outcomes[0] = YES token, outcomes[1] = NO token
+			if (selectedMarket && resolvedOutcome === null && rawLabel) {
+				const outcomeLabels = (selectedMarket.outcomes as string[]).map((o: string) => o.toLowerCase());
+				const matchIdx = outcomeLabels.findIndex(
+					(o: string) => o.includes(rawLabel) || rawLabel.includes(o),
+				);
+				if (matchIdx === 0) resolvedOutcome = 'YES';
+				else if (matchIdx >= 1) resolvedOutcome = 'NO';
+			}
+		} else {
+			// --- Fallback: "bet/buy $X on [description] yes/no" ---
+			// Strip the action verb, amount, leading "on", and trailing outcome word to get the market description
+			let queryStr = message.trim();
+			queryStr = queryStr.replace(/^\s*(bet|buy|sell|trade)\b\s*/i, '').trim();
+			queryStr = queryStr.replace(/\$\s*\d+(?:\.\d{1,2})?/, '').trim();
+			queryStr = queryStr.replace(/\b\d+(?:\.\d{1,2})?\s*\$(?!\w)/, '').trim();
+			queryStr = queryStr.replace(/\b\d+(?:\.\d{1,2})?\s*(dollars?|usd|bucks?)\b/i, '').trim();
+			queryStr = queryStr.replace(/^\s*on\b\s*/i, '').trim();
+			// Strip trailing direction/outcome word (already captured in resolvedOutcome)
+			queryStr = queryStr.replace(/\s*\b(yes|no|up|down|long|short)\s*$/i, '').trim();
+
+			if (queryStr) {
+				const candidates = await this.deps.readService.searchMarketsByText(queryStr);
+				selectedMarket = candidates[0] ?? null;
+			}
 		}
 
 		if (!selectedMarket) {
 			return { type: 'text', content: 'I could not find an active matching market right now. Please specify the market ID.' };
 		}
+		if (!resolvedOutcome) {
+			return { type: 'text', content: 'I could not determine the outcome to bet on. Try ending with "on yes" or "on no".' };
+		}
 		const pseudoIntent = {
 			intent: 'place_bet' as const,
 			userId: discordUserId,
 			marketId: selectedMarket.id as MarketId,
-			outcome,
+			outcome: resolvedOutcome,
 			action,
 			amountCents: amountCents as UsdCents,
 			rawText: message,
@@ -974,43 +1063,61 @@ async function defaultReadExplainer(input: ReadExplainerInput): Promise<string> 
  * Produces up to three factual summaries for READ responses.
  * For sports/esports events, prioritizes outright winner markets over prop/handicap markets.
  */
-async function summarizeUpToThree(
-	readService: PolymarketReadService,
-	markets: readonly { id: MarketSummary['id'] }[],
+function summarizeUpToThree(
+	markets: readonly import('../types').Market[],
 	query?: string
-): Promise<readonly MarketSummary[]> {
-	// Get all market summaries
-	const allSummaries = await Promise.all(
-		markets.slice(0, 15).map((market) => readService.summarizeMarket(market.id)),
-	);
-	const validSummaries = allSummaries.filter((summary): summary is MarketSummary => summary !== null);
+): readonly MarketSummary[] {
+	// Convert Market → MarketSummary directly — no re-fetch needed, search results already have all data
+	const validSummaries: MarketSummary[] = markets.slice(0, 15).map(m => ({
+		id: m.id,
+		question: m.question,
+		status: m.status,
+		outcomes: m.outcomes,
+		outcomeCount: m.outcomes.length,
+		outcomePrices: m.outcomePrices,
+		volume: m.volume,
+		slug: m.slug,
+		eventSlug: m.eventSlug,
+	}));
 
-	// 1. Exact/strong match (active) always first
+	// The search layer already ranked markets by keyword relevance then volume.
+	// Trust that ordering — do NOT re-sort by volume here, which would promote
+	// high-volume but query-irrelevant markets (e.g. Richard Grenell over María Corina Machado).
+
+	// If the query contains specific keywords, prefer the first active non-prop market
+	// whose question contains at least one meaningful keyword from the query.
 	let bestActive: MarketSummary | undefined;
 	if (query) {
-		const q = query.toLowerCase();
-		bestActive = validSummaries.find(
-			m => m.status === 'active' && m.question.toLowerCase().includes(q)
-		);
+		const queryKeywords = query
+			.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+			.toLowerCase()
+			.replace(/[^a-z0-9\s]/g, ' ')
+			.split(/\s+/)
+			.filter(w => w.length >= 4 && !new Set([
+				'tell', 'about', 'what', 'show', 'market', 'odds', 'will', 'the', 'for',
+			]).has(w));
+		if (queryKeywords.length > 0) {
+			bestActive = validSummaries.find(m =>
+				m.status === 'active' &&
+				!isPropMarket(m.question) &&
+				queryKeywords.some(kw =>
+					m.question.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().includes(kw)
+				)
+			);
+		}
 	}
+	// Fall back to first active non-prop in search order (search already ranked by relevance)
+	if (!bestActive) {
+		bestActive = validSummaries.find(m => m.status === 'active' && !isPropMarket(m.question));
+	}
+	// Last resort: any active market
 	if (!bestActive) {
 		bestActive = validSummaries.find(m => m.status === 'active');
 	}
 
-	// 2. Fill with other active, then closed, but never duplicate
-	const rest = validSummaries
-		.filter(m => m !== bestActive)
-		.sort((a, b) => {
-			if (a.status === 'active' && b.status !== 'active') return -1;
-			if (a.status !== 'active' && b.status === 'active') return 1;
-			const aIsProp = isPropMarket(a.question);
-			const bIsProp = isPropMarket(b.question);
-			if (aIsProp !== bIsProp) return aIsProp ? 1 : -1;
-			return 0;
-		});
-
-	const result = bestActive ? [bestActive, ...rest] : rest;
-	return result.slice(0, 3);
+	const rest = validSummaries.filter(m => m !== bestActive);
+	const result = bestActive ? [bestActive, ...rest] : validSummaries;
+	return result.slice(0, 1);
 }
 
 /**
@@ -1023,9 +1130,16 @@ function isPropMarket(question: string): boolean {
 		'game 1', 'game 2', 'game 3', 'game 4', 'game 5',
 		'handicap', 'spread', 'total', 'o/u', 'over/under',
 		'first blood', 'first to', 'kill handicap',
-		'map 1', 'map 2', 'map 3',
+		'map 1', 'map 2', 'map 3', 'map 4', 'map 5',
+		'map winner', 'game winner', 'half time', 'halftime',
+		'quarter', '1st map', '2nd map', '3rd map',
 	];
-	return propIndicators.some(indicator => lower.includes(indicator));
+	if (propIndicators.some(indicator => lower.includes(indicator))) return true;
+	// Player props: "Name: Points/Rebounds/Assists/Kills O/U N.N"
+	if (/:\s*(points|rebounds|assists|steals|blocks|threes|turnovers|kills|deaths)\s*(o\/u|over\/under)?\s*\d/i.test(question)) return true;
+	// Generic O/U with number anywhere: "O/U 4.5", "Over/Under 2.5"
+	if (/\b(o\/u|over\/under)\s*\d/i.test(question)) return true;
+	return false;
 }
 
 /**
@@ -1051,4 +1165,28 @@ function mapValidationErrorToUserMessage(errorCode: ValidationErrorCode): string
 
 function assertNever(value: never): never {
 	throw new Error(`Unhandled case: ${String(value)}`);
+}
+
+/**
+ * Detects greetings and casual chat that have no market-query intent.
+ * When true, the router skips market search and lets the AI respond
+ * conversationally without appending random Olympus links.
+ */
+const GREETING_PATTERNS = [
+	/^\s*(hi|hey|hello|yo|sup|hola|howdy|hiya|heya|what'?s?\s*up|wassup|wsp)\s*[.!?]*\s*$/i,
+	/^\s*(hi|hey|hello|yo)\s+(there|everyone|all|guys|folks|team|bot|buddy|friend|fam|bro|dude|man)\s*[.!?]*\s*$/i,
+	/^\s*(good\s+(morning|afternoon|evening|night|day))\s*[.!?]*\s*$/i,
+	/^\s*(gm|gn|gg|ty|thx|thanks|thank\s+you|cheers)\s*[.!?]*\s*$/i,
+	/^\s*(how\s+are\s+you|how'?s?\s+it\s+going|how\s+do\s+you\s+do)\s*\?*\s*$/i,
+	/^\s*(nice\s+to\s+meet\s+you|pleased\s+to\s+meet\s+you)\s*[.!?]*\s*$/i,
+	/^\s*(bye|goodbye|see\s+ya|later|cya|peace\s+out|take\s+care)\s*[.!?]*\s*$/i,
+	/^\s*(lol|lmao|haha|hehe|xd|kek|rofl|😂|🤣|👋|😀|😊|🙌)\s*$/i,
+	/^\s*[👋🙋‍♂️🙋‍♀️🙋😀😊🤝✌️🫡]+\s*$/,
+];
+
+export function isCasualChat(message: string): boolean {
+	const trimmed = message.trim();
+	// Very short messages with no topic substance
+	if (trimmed.length <= 2 && !/\d/.test(trimmed)) return true;
+	return GREETING_PATTERNS.some(pattern => pattern.test(trimmed));
 }

@@ -49,12 +49,24 @@ const SPORT_ALIASES: Record<string, string[]> = {
 		// LCP teams
 		'cfo', 'ctbc', 'flying oyster', 'tsw', 'team secret whales', 'dcg', 'deep cross',
 		'gz', 'ground zero', 'shg', 'softbank hawks',
-		// LCS/LEC/other
+		// LCS (NA) teams
 		'c9', 'cloud9', 'tl', 'team liquid', 'fly', 'flyquest', '100t', '100 thieves',
-		'eg', 'evil geniuses', 'nrg', 'lyon', 'giantx', 'karmine', 'fnatic', 'g2'],
+		'eg', 'evil geniuses', 'nrg', 'dignitas', 'immortals', 'shopify rebellion', 'shopify',
+		// LEC (EU) teams
+		'g2', 'g2 esports', 'g2 ares', 'fnatic', 'excel', 'xls', 'sk gaming', 'sk',
+		'misfits', 'rogue', 'mad lions', 'mad', 'astralis', 'vitality', 'team vitality',
+		'heretics', 'giantx', 'karmine corp', 'karmine', 'kcorp',
+		// ERL / Academy / ERB sub-league teams
+		'nord', 'nordguard', 'ww team', 'wwteam', 'ww', 'use1', 'use2',
+		'lyon', 'ldlc', 'rwc', 'bbl esports', 'bbl',
+		'team bds', 'bds', 'movistar', 'natus vincere', 'navi'],
 	cs2: ['counter strike', 'counter-strike', 'cs2', 'csgo', 'cs go', 'cs:go', 'hltv',
 		'navi', 'faze', 'vitality', 'g2 esports', 'astralis', 'cloud9', 'mouz', 'spirit',
-		'heroic', 'ence', 'liquid', 'complexity', 'fnatic', 'big', 'nip', 'virtus.pro'],
+		'heroic', 'ence', 'liquid', 'complexity', 'fnatic', 'big', 'nip', 'virtus.pro',
+		// ESL/BLAST teams (teams that compete in both CS2 and other esports)
+		'3dmax', '3 dmax', 'gaimin', 'gaimin gladiators', 'saw', 'passion ua',
+		'furia', 'mibr', 'imperial', 'monte', 'betboom', 'forze', 'aurora',
+		'eternfire', 'spirit cs', 'team vitality', 'team liquid'],
 	dota2: ['dota', 'dota2', 'dota 2', 'the international',
 		// Major Dota 2 teams
 		'tundra', 'tundra esports', 'betboom', 'og', 'team spirit', 'spirit',
@@ -71,16 +83,110 @@ const SPORT_ALIASES: Record<string, string[]> = {
 	codmw: ['call of duty', 'cod', 'warzone'],
 	rl: ['rocket league'],
 	sc2: ['starcraft', 'starcraft 2', 'sc2'],
+	sc: ['brood war', 'starcraft brood'],
 	pubg: ['pubg', 'playerunknown'],
+	r6siege: ['rainbow six', 'r6', 'r6 siege', 'siege'],
+	wildrift: ['wild rift', 'wildrift', 'lol mobile'],
+	psp: ['esports', 'gaming tournament'],
 	// Traditional sports
-	nba: ['nba', 'basketball', 'lakers', 'celtics', 'warriors', 'bucks', 'nets', 'knicks'],
-	nfl: ['nfl', 'football', 'super bowl', 'superbowl', 'patriots', 'chiefs', 'eagles'],
+	nba: ['nba', 'basketball', 'lakers', 'celtics', 'warriors', 'warrior', 'bucks', 'nets', 'knicks',
+		'clippers', 'clipper', 'nuggets', 'heat', 'bulls', 'suns', 'spurs', 'pistons',
+		'raptors', 'hawks', 'thunder', 'trail blazers', 'blazers', 'pacers', 'cavaliers',
+		'wizards', 'pelicans', 'jazz', 'kings', 'grizzlies', 'rockets', 'magic', 'hornets',
+		'76ers', 'sixers', 'mavericks', 'mavs', 'timberwolves', 'wolves',
+		// Player names — enables tag-based search for player prop queries
+		'wembanyama', 'tatum', 'jayson tatum', 'victor wembanyama',
+		'lebron', 'lebron james', 'curry', 'steph curry', 'stephen curry',
+		'giannis', 'jokic', 'nikola jokic', 'luka', 'luka doncic',
+		'kyrie', 'kyrie irving', 'dame', 'lillard', 'damian lillard',
+		'durant', 'kevin durant', 'harden', 'james harden', 'booker', 'devin booker',
+		'embiid', 'joel embiid', 'shai', 'gilgeous-alexander',
+	],
+	// WNBA — use full city+team names to avoid ambiguous single words ('sun' → Sunderland, 'storm' → weather, etc.)
+	wnba: ['wnba', 'womens basketball', "women's nba", "women's basketball",
+		'connecticut sun', 'las vegas aces', 'indiana fever', 'washington mystics',
+		'seattle storm', 'los angeles sparks', 'new york liberty', 'dallas wings',
+		'chicago sky', 'atlanta dream', 'minnesota lynx', 'phoenix mercury'],
+	nfl: ['nfl', 'football', 'super bowl', 'superbowl', 'patriots', 'chiefs', 'eagles', 'nfl draft', 'draft pick', 'first overall pick'],
 	mlb: ['mlb', 'baseball', 'world series', 'yankees', 'dodgers', 'mets'],
 	nhl: ['nhl', 'hockey', 'stanley cup'],
-	epl: ['premier league', 'epl', 'manchester united', 'arsenal', 'chelsea', 'liverpool', 'man city', 'tottenham'],
-	lal: ['la liga', 'laliga', 'barcelona', 'real madrid', 'atletico madrid'],
-	bun: ['bundesliga', 'bayern', 'bayern munich', 'dortmund', 'borussia'],
-	sea: ['serie a', 'seria a', 'juventus', 'inter milan', 'ac milan', 'napoli', 'roma'],
+	// Hockey variants
+	khl: ['khl', 'kontinental hockey', 'russian hockey', 'kontinental league'],
+	shl: ['shl', 'swedish hockey league', 'sweden hockey'],
+	cehl: ['czech extraliga', 'czech hockey', 'cehl'],
+	dehl: ['del', 'deutsche eishockey liga', 'german hockey', 'dehl'],
+	snhl: ['national league hockey', 'swiss hockey', 'snhl', 'nl hockey switzerland'],
+	ahl: ['ahl', 'american hockey league', 'ahl hockey'],
+	hok: ['field hockey', 'field hockey championship'],
+	epl: ['premier league', 'epl',
+		// Big 6 + common full/short names
+		'manchester united', 'man united', 'man utd', 'mufc',
+		'manchester city', 'man city', 'mcfc',
+		'arsenal', 'afc', 'the gunners',
+		'chelsea', 'cfc', 'the blues',
+		'liverpool', 'lfc', 'the reds',
+		'tottenham', 'spurs', 'thfc',
+		// Others
+		'aston villa', 'villa', 'avfc',
+		'newcastle', 'newcastle united', 'nufc', 'magpies',
+		'west ham', 'west ham united', 'whufc', 'hammers',
+		'brighton', 'brighton hove albion', 'bhafc', 'seagulls',
+		'brentford', 'bfc', 'bees',
+		'crystal palace', 'palace', 'cpfc', 'eagles',
+		'fulham', 'ffc', 'cottagers',
+		'wolves', 'wolverhampton', 'wwfc',
+		'nottingham forest', 'forest', 'nffc',
+		'bournemouth', 'afcb', 'cherries',
+		'everton', 'efc', 'toffees',
+		'leicester', 'leicester city', 'lcfc', 'foxes',
+		'ipswich', 'ipswich town', 'itfc', 'tractor boys',
+		'southampton', 'saints', 'sfc'],
+	lal: ['la liga', 'laliga',
+		'barcelona', 'fc barcelona', 'barca',
+		'real madrid', 'cf', 'madrid',
+		'atletico madrid', 'atletico', 'atleti',
+		'sevilla', 'sfc',
+		'real sociedad', 'sociedad',
+		'villarreal', 'yellow submarine',
+		'athletic bilbao', 'athletic club', 'bilbao',
+		'real betis', 'betis',
+		'valencia', 'vfc',
+		'osasuna', 'girona', 'mallorca', 'celta vigo', 'celta',
+		'getafe', 'rayo vallecano', 'rayo', 'vegas',
+		'deportivo alaves', 'alaves', 'leganes'],
+	bun: ['bundesliga',
+		'bayern munich', 'fc bayern', 'fcb', 'fcbayern',
+		'borussia dortmund', 'dortmund', 'bvb',
+		'bayer leverkusen', 'leverkusen', 'b04',
+		'rb leipzig', 'rasenball', 'leipzig',
+		'borussia monchengladbach', 'monchengladbach', 'gladbach', 'bmo',
+		'eintracht frankfurt', 'frankfurt', 'sge',
+		'vfb stuttgart', 'stuttgart', 'vfb',
+		'sc freiburg', 'freiburg', 'scf',
+		'wolfsburg', 'vfl wolfsburg',
+		'union berlin', 'fc union', 'union',
+		'werder bremen', 'werder', 'svw',
+		'hoffenheim', 'tsg hoffenheim',
+		'fc augsburg', 'augsburg', 'fca',
+		'mainz', 'fsv mainz',
+		'heidenheim', 'holstein kiel', 'bochum', 'vfl bochum',
+		'fc koln', 'koln', 'cologne', 'fc nurnberg', 'nurnberg',
+		'hamburger sv', 'hsv', 'hamburger', 'hamburger sv'],
+	sea: ['serie a',
+		'juventus', 'juve',
+		'inter milan', 'inter', 'internazionale', 'nerazzurri',
+		'ac milan', 'milan', 'rossoneri',
+		'napoli', 'ssc napoli', 'partenopei',
+		'as roma', 'roma', 'giallorossi',
+		'lazio', 'ss lazio',
+		'atalanta', 'dea',
+		'fiorentina', 'viola',
+		'torino', 'granata',
+		'bologna', 'fc bologna',
+		'udinese', 'verona', 'hellas verona',
+		'sampdoria', 'samp',
+		'cagliari', 'genoa', 'empoli', 'lecce', 'salernitana',
+		'parma', 'venezia', 'monza', 'como'],
 	ucl: ['champions league', 'ucl', 'uefa champions'],
 	uel: ['europa league', 'uel'],
 	mls: ['mls', 'major league soccer'],
@@ -88,12 +194,185 @@ const SPORT_ALIASES: Record<string, string[]> = {
 		'australia', 'aus', 'india', 'ind', 'england', 'eng', 'south africa', 'sa',
 		'new zealand', 'nz', 'pakistan', 'pak', 'sri lanka', 'sl', 'west indies', 'wi',
 		'bangladesh', 'ban', 'afghanistan', 'afg'],
+	// Cricket series/tournament codes
+	odi: ['one day cricket', 'odi cricket', 'one day international'],
+	t20: ['t20 cricket', 't20i', 'twenty20', 'twenty 20'],
+	test: ['test cricket', 'test match cricket', 'test series'],
+	cricipl: ['ipl 2026', 'indian premier league 2026'],
+	cricpsl: ['psl cricket', 'pakistan super league', 'psl'],
+	criccpl: ['cpl cricket', 'caribbean premier league'],
+	cricbbl: ['big bash league', 'bbl cricket', 'big bash'],
+	crict20blast: ['t20 blast', 'vitality blast', 'county cricket'],
+	cricmlc: ['major league cricket', 'mlc cricket', 'usa cricket'],
+	cricilt20: ['ilt20', 'uae cricket league'],
+	// Cricket country series
+	craus: ['australia cricket series', 'cricket australia'],
+	creng: ['england cricket series', 'ecb cricket'],
+	crind: ['india cricket series', 'bcci cricket'],
+	crpak: ['pakistan cricket series', 'pcb cricket'],
+	crnew: ['new zealand cricket series', 'blackcaps'],
+	crsou: ['south africa cricket', 'proteas cricket'],
 	ufc: ['ufc', 'mma', 'mixed martial arts', 'ultimate fighting'],
+	zuffa: ['zuffa', 'ufc fight night', 'bellator', 'one championship'],
 	atp: ['atp', 'tennis', 'djokovic', 'nadal', 'federer', 'alcaraz', 'sinner'],
 	wta: ['wta', 'women tennis'],
-	ncaab: ['march madness', 'ncaa basketball', 'ncaab', 'college basketball'],
+	ncaab: ['march madness', 'ncaa basketball', 'ncaab', 'college basketball', 'ncaa', 'tournament', 'ncaa tournament', 'ncaa mens', 'ncaa womens', 'final four'],
 	cfb: ['college football', 'cfb', 'ncaa football'],
 	kbo: ['kbo', 'korean baseball'],
+	// Rugby
+	ruprem: ['rugby', 'rugby union', 'rugby league', 'premiership rugby', 'aviva premiership'],
+	rutopft: ['top 14', 'top14', 'french rugby', 'pro14'],
+	rusixnat: ['six nations', '6 nations', 'rugby six nations'],
+	ruurc: ['united rugby', 'urc', 'rainbow cup', 'united rugby championship'],
+	rusrp: ['super rugby', 'super rugby pacific', 'srp'],
+	ruchamp: ['european rugby champions cup', 'champions cup rugby', 'heineken cup'],
+	rueuchamp: ['european challenge cup', 'rugby challenge cup'],
+	ruwc: ['rugby world cup', 'rwc'],
+	// Lacrosse
+	pll: ['lacrosse', 'pll', 'premier lacrosse'],
+	wll: ['womens lacrosse', 'wll'],
+	// Table Tennis
+	wttmen: ['table tennis', 'ping pong', 'wtt', 'world table tennis'],
+	// Basketball — Euroleague
+	euroleague: ['euroleague', 'euro league', 'basketball euroleague', 'eurobasket'],
+	// Winter / Summer Olympics
+	mwoh: ['winter olympics', 'winter olympic', 'olympics 2026'],
+	wwoh: ['summer olympics', 'olympics 2028'],
+	// World Baseball Classic
+	wbc: ['world baseball classic', 'wbc baseball'],
+	// Additional soccer leagues
+	bra: ['brasileirao', 'brazilian football', 'brazil football', 'série a brazil', 'serie a brasil'],
+	bra2: ['brasileirao serie b', 'brazil serie b'],
+	arg: ['argentine football', 'argentina football', 'superliga argentina', 'primera division'],
+	por: ['primeira liga', 'liga portugal', 'portuguese football'],
+	chi: ['chilean football', 'primera division chile'],
+	chi1: ['chilean primera division'],
+	col: ['colombian football', 'liga colombiana'],
+	col1: ['liga betplay', 'colombia betplay'],
+	nor: ['norwegian eliteserien', 'eliteserien', 'norway football'],
+	den: ['danish superliga', 'superliga denmark', 'denmark football'],
+	jap: ['j-league', 'j league', 'japan football', 'j1 league'],
+	ja2: ['j2 league', 'japan second division'],
+	kor: ['k-league', 'k league', 'korea football'],
+	spl: ['saudi pro league', 'saudi football', 'roshn league'],
+	tur: ['super lig', 'süper lig', 'turkish super lig', 'turkey football'],
+	rus: ['russian premier league', 'russia football', 'rpl'],
+	ssc: ['scottish premiership', 'scottish football', 'spfl',
+		// Scottish teams — both full names and common shortforms
+		'celtic', 'celtic fc', 'hoops',
+		'rangers fc', 'glasgow rangers', 'gers', 'ibrox',
+		'hearts', 'heart of midlothian', 'jambos',
+		'hibernian', 'hibs', 'hibees',
+		'aberdeen', 'aberdeen fc', 'dons',
+		'kilmarnock', 'killie',
+		'motherwell', 'well',
+		'st mirren', 'saints',
+		'dundee', 'dundee fc', 'dee',
+		'dundee united', 'united',
+		'st johnstone', 'saints perth',
+		'ross county', 'county',
+		'livingston', 'livi',
+		'inverness', 'ict',
+		'partick thistle', 'partick', 'jags'],
+	efl: ['efl championship', 'championship england', 'english championship', 'efl',
+		// EFL Championship team names + 3-letter slug abbreviations used by Polymarket/Gamma
+		'leeds united', 'leeds', 'lee', 'lufc',
+		'sunderland', 'sunderland afc', 'safc', 'black cats',
+		'sheffield united', 'sheffield utd', 'shu', 'blades',
+		'burnley', 'bur', 'clarets',
+		'west brom', 'west bromwich', 'west bromwich albion', 'wba', 'baggies',
+		'middlesbrough', 'boro', 'mid',
+		'millwall', 'the lions', 'mil',
+		'coventry', 'coventry city', 'sky blues', 'cov',
+		'norwich', 'norwich city', 'canaries', 'nor', 'ncfc',
+		'bristol city', 'bcfc', 'robins', 'bri',
+		'preston', 'preston north end', 'pne',
+		'stoke', 'stoke city', 'potters', 'sto',
+		'watford', 'hornets', 'wat',
+		'qpr', 'queens park rangers', 'hoops qpr',
+		'cardiff', 'cardiff city', 'bluebirds', 'car',
+		'plymouth', 'plymouth argyle', 'ply', 'pilgrims',
+		'swansea', 'swansea city', 'swans', 'swa',
+		'luton', 'luton town', 'hatters', 'lut',
+		'derby', 'derby county', 'rams', 'der',
+		'hull', 'hull city', 'tigers', 'hul',
+		'blackburn', 'blackburn rovers', 'rovers', 'bla',
+		'oxford', 'oxford united', 'oxf', 'us',
+		'portsmouth', 'pompey', 'por pom',
+		'sheffield wednesday', 'shef wed', 'owls', 'shw',
+		'bristol rovers', 'gas',
+		'reading', 'royals', 'rea',
+		'birmingham', 'birmingham city', 'brum', 'bcfc bham'],
+	ere: ['eredivisie', 'dutch football', 'netherlands football', 'dutch league',
+		'ajax', 'ajax amsterdam', 'godenzonen',
+		'psv', 'psv eindhoven',
+		'feyenoord', 'feyenoord rotterdam',
+		'az alkmaar', 'az', 'kaasboeren',
+		'twente', 'fc twente',
+		'utrecht', 'fc utrecht',
+		'groningen', 'fc groningen', 'trots van het noorden',
+		'heerenveen', 'sc heerenveen',
+		'sparta rotterdam', 'sparta',
+		'nec nijmegen', 'nec',
+		'go ahead eagles', 'go ahead',
+		'fortuna sittard', 'fortuna',
+		'pec zwolle', 'pec', 'zwolle',
+		'heracles almelo', 'heracles',
+		'almere city', 'almere',
+		'rkc waalwijk', 'rkc',
+		'excelsior', 'sbv excelsior'],
+	fl1: ['ligue 1', 'french football', 'french league', 'ligue 1 uber eats',
+		'paris saint-germain', 'psg', 'paris sg',
+		'monaco', 'as monaco', 'asm',
+		'lyon', 'olympique lyonnais', 'ol', 'les gones',
+		'marseille', 'olympique de marseille', 'om', 'les phocéens',
+		'lille', 'losc', 'losc lille',
+		'nice', 'ogc nice', 'les aiglons',
+		'lens', 'rc lens', 'les sang et or',
+		'rennes', 'stade rennais', 'srfc',
+		'toulouse', 'toulouse fc', 'tfc',
+		'brest', 'stade brestois', 'brest fc',
+		'nantes', 'fc nantes',
+		'montpellier', 'mhsc',
+		'reims', 'stade de reims',
+		'strasbourg', 'rc strasbourg',
+		'lorient', 'fc lorient',
+		'metz', 'fc metz',
+		'le havre', 'le havre ac', 'hac',
+		'auxerre', 'aej auxerre',
+		'angers', 'sco angers',
+		'saint-etienne', 'as saint-etienne', 'asse'],
+	itc: ['coppa italia', 'italy cup'],
+	cde: ['copa del rey', 'spanish cup'],
+	dfb: ['dfb pokal', 'german cup', 'dfb cup'],
+	lib: ['copa libertadores', 'libertadores'],
+	sud: ['copa sudamericana', 'sudamericana'],
+	con: ['concacaf champions', 'champions cup concacaf'],
+	cof: ['conmebol', 'south america confederation'],
+	afc: ['afc asian cup', 'asian cup football'],
+	ofc: ['ofc nations cup', 'oceania football'],
+	uef: ['uefa nations league', 'nations league'],
+	caf: ['afcon', 'africa cup of nations', 'caf championship'],
+	acn: ['africa cup of nations', 'afcon 2025', 'acn'],
+	efa: ['egyptian premier league', 'egypt football'],
+	csa: ['south american u20', 'conmebol u20'],
+	cdr: ['copa del rey round'],
+	abb: ['afc champions league', 'asian champions league'],
+	uwcl: ['womens champions league', "women's champions league", 'uwcl'],
+	fif: ['fifa tournament', 'fifa championship', 'cup of nations'],
+	mar1: ['botola pro', 'moroccan football', 'morocco league'],
+	egy1: ['egyptian premier league 2'],
+	cze1: ['czech first league', 'fortuna liga', 'czech football'],
+	bol1: ['bolivian football', 'liga boliviana'],
+	rou1: ['romanian liga 1', 'superliga romania'],
+	per1: ['peruvian football', 'liga 1 peru'],
+	ukr1: ['ukrainian premier league', 'ukraine football', 'upl'],
+	// Formula 1
+	f1: ['formula 1', 'formula one', 'f1', 'grand prix', 'ferrari', 'red bull racing', 'mercedes f1', 'verstappen', 'hamilton'],
+	// Golf
+	golf: ['pga tour', 'golf', 'masters', 'british open', 'us open golf', 'ryder cup'],
+	// Boxing
+	boxing: ['boxing', 'heavyweight', 'knockout', 'wbc boxing', 'wba', 'ibf'],
 };
 
 /**
@@ -124,10 +403,58 @@ const TRENDING_KEYWORDS = new Set([
 	'breaking', 'viral', 'movers', 'active', 'busiest',
 ]);
 
+/**
+ * For well-known player markets whose slugs can't be derived from the player's
+ * name alone (e.g. "messi" → slug has "lionel", "fifa", "in-the"), we keep a
+ * direct keyword → event-slug mapping. Keys are lowercase player names / phrases.
+ * The search code checks these BEFORE the general slug-generation step.
+ */
+const PLAYER_SLUG_OVERRIDES: Record<string, string> = {
+	// Soccer — keyed by space-separated words that must ALL appear in query
+	'messi world cup': 'will-lionel-messi-play-in-the-2026-fifa-world-cup',
+	'messi fifa world cup': 'will-lionel-messi-play-in-the-2026-fifa-world-cup',
+	'messi retire': 'will-lionel-messi-retire-from-professional-soccer',
+	// NBA — player props only needed when query is ambiguous w/ general overrides
+	'wembanyama quadruple': 'will-victor-wembanyama-record-a-quadruple-double-this-season',
+	'tatum play season': 'will-jayson-tatum-play-a-game-this-season',
+	'tatum play this season': 'will-jayson-tatum-play-a-game-this-season',
+	'jayson tatum play': 'will-jayson-tatum-play-a-game-this-season',
+	'lebron retire': 'will-lebron-james-retire-before-next-nba-season',
+};
+
 /** Words that indicate the user wants recently created markets. */
 const RECENCY_KEYWORDS = new Set([
 	'new', 'newest', 'latest', 'recent', 'fresh', 'just', 'launched', 'today',
 ]);
+
+/**
+ * Common abbreviations / nicknames → expanded forms.
+ * Applied as whole-word replacements before AI extraction and slug generation
+ * so that e.g. "BTC" produces "bitcoin" slugs, "DJT" produces "trump" slugs.
+ */
+const QUERY_SYNONYMS: Record<string, string> = {
+	btc: 'bitcoin',
+	eth: 'ethereum',
+	bnb: 'binance',
+	sol: 'solana',
+	xrp: 'ripple',
+	doge: 'dogecoin',
+	djt: 'trump',
+	potus: 'president',
+	gop: 'republican',
+	dem: 'democrat',
+	sb: 'super bowl',
+	mlk: 'martin luther king',
+};
+
+/** Expand known abbreviations/nicknames in a query string (whole-word, case-insensitive). */
+function expandSynonyms(query: string): string {
+	let result = query;
+	for (const [abbr, full] of Object.entries(QUERY_SYNONYMS)) {
+		result = result.replace(new RegExp(`\\b${abbr}\\b`, 'gi'), full);
+	}
+	return result;
+}
 
 /** Cache for Polymarket tags (from /tags endpoint). */
 interface TagEntry {
@@ -215,7 +542,10 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 		}
 
 		console.log(`[search] Raw query: "${normalized}"`);
-		const lower = normalized.toLowerCase();
+		// Normalize accented chars to ASCII (e.g. "Rodríguez" → "Rodriguez") so they
+		// don't get split into fragments like "rodr" + "guez" by the ASCII-only regex.
+		const asciiQuery = normalized.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+		const lower = asciiQuery.toLowerCase();
 		const queryWords = lower.replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length >= 2);
 
 		// ──────────────────────────────────────────────────────────────────────
@@ -232,8 +562,9 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 
 		// ──────────────────────────────────────────────────────────────────────
 		// 2. RECENCY — "what's new?", "latest markets", "anything fresh?"
+		//    Skip for matchup queries ("X vs Y today") — those need sports search
 		// ──────────────────────────────────────────────────────────────────────
-		if (queryWords.some(w => RECENCY_KEYWORDS.has(w)) && !queryWords.some(w => TRENDING_KEYWORDS.has(w))) {
+		if (queryWords.some(w => RECENCY_KEYWORDS.has(w)) && !queryWords.some(w => TRENDING_KEYWORDS.has(w)) && !lower.includes(' vs ')) {
 			console.log(`[search] Recency query detected`);
 			const recent = await this.fetchNewEvents(15);
 			if (recent.length > 0) {
@@ -244,22 +575,37 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 
 		// ──────────────────────────────────────────────────────────────────────
 		// 3. CATEGORY — "show me politics", "crypto markets", "sports"
+		//    Only fire for single-topic generic queries (≤1 content word).
+		//    Multi-word queries like "bitcoin ETF approval" must NOT trigger
+		//    the crypto category — they need specific slug/event search.
 		// ──────────────────────────────────────────────────────────────────────
-		for (const w of queryWords) {
-			const tagSlug = CATEGORY_TAG_MAP[w];
-			if (tagSlug) {
-				console.log(`[search] Category detected: "${w}" → tag "${tagSlug}"`);
-				const catResults = await this.fetchEventsByTag(tagSlug, 20);
-				if (catResults.length > 0) {
-					console.log(`[search] Returning ${catResults.length} category markets for "${tagSlug}"`);
-					return catResults;
+		const CATEGORY_NOISE = new Set(['show', 'me', 'markets', 'market', 'latest', 'top', 'list', 'get', 'find', 'whats', 'happening', 'in', 'any']);
+		const meaningfulQueryWords = queryWords.filter(w => !CATEGORY_NOISE.has(w));
+		if (meaningfulQueryWords.length <= 1) {
+			for (const w of queryWords) {
+				const tagSlug = CATEGORY_TAG_MAP[w];
+				if (tagSlug) {
+					console.log(`[search] Category detected: "${w}" → tag "${tagSlug}"`);
+					const catResults = await this.fetchEventsByTag(tagSlug, 20);
+					if (catResults.length > 0) {
+						console.log(`[search] Returning ${catResults.length} category markets for "${tagSlug}"`);
+						return catResults;
+					}
 				}
 			}
 		}
 
-		// Use AI to extract search keywords from conversational queries
-		const searchTerms = await extractSearchKeywords(normalized);
-		console.log(`[search] AI-extracted keywords: "${searchTerms}"`);
+		// Expand common abbreviations/nicknames before any AI or slug work
+		const synonymExpanded = expandSynonyms(normalized);
+
+		// Combined AI call: extract keywords AND predict likely slug fragments in one round-trip.
+		// Falls back gracefully if AI is unavailable.
+		const { keywords: rawSearchTerms, slugPredictions: aiSlugPredictions } =
+			await extractKeywordsAndSlugs(synonymExpanded);
+		// Normalize accented chars to ASCII so downstream slug/keyword logic works
+		// correctly for names like "Rodríguez" → "Rodriguez".
+		const searchTerms = rawSearchTerms.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+		console.log(`[search] AI-extracted keywords: "${searchTerms}"${aiSlugPredictions.length ? ` | slug hints: ${aiSlugPredictions.slice(0, 3).join(', ')}` : ''}`);
 
 		// If AI returned empty (vague query like "anything interesting?"), show trending
 		if (searchTerms.trim().length === 0) {
@@ -270,29 +616,78 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 
 		// Try events endpoint with multiple slug candidates
 		let eventMarkets: Market[] = [];
-		const eventSlugCandidates = buildEventSlugCandidates(searchTerms);
-		console.log(`[search] Event slug candidates:`, eventSlugCandidates.slice(0, 5));
-		const eventScopes = ['closed=false', 'closed=true'];
-		for (const scope of eventScopes) {
-			if (eventMarkets.length > 0) break;
-			for (const slug of eventSlugCandidates) {
+
+		// Check player slug overrides first — for well-known markets whose slugs
+		// can't be derived from the query alone (e.g. "messi" → needs "lionel", "fifa")
+		const searchTermsLower = searchTerms.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+		const searchTermsWords = new Set(searchTermsLower.split(/\s+/));
+		for (const [phrase, overrideSlug] of Object.entries(PLAYER_SLUG_OVERRIDES)) {
+			// Match if ALL words in the phrase appear in the query (order-independent)
+			const phraseWords = phrase.split(/\s+/);
+			const allMatch = phraseWords.every(pw => searchTermsWords.has(pw) || searchTermsLower.includes(pw));
+			if (allMatch) {
+				console.log(`[search] Player override match: "${phrase}" → "${overrideSlug}"`);
 				try {
-					const eventUrl = `${GAMMA_API_BASE}/events?${scope}&limit=1&slug=${encodeURIComponent(slug)}`;
-					const eventResp = await fetch(eventUrl);
-					if (eventResp.ok) {
-						const events = await eventResp.json();
-						if (Array.isArray(events) && events.length > 0 && Array.isArray(events[0].markets)) {
-							console.log(`[search] Event hit! slug="${slug}" title="${events[0].title}" markets=${events[0].markets.length}`);
-							eventMarkets = events[0].markets
+					const overrideUrl = `${GAMMA_API_BASE}/events?closed=false&limit=1&slug=${encodeURIComponent(overrideSlug)}`;
+					const overrideResp = await fetch(overrideUrl);
+					if (overrideResp.ok) {
+						const overrideEvents = await overrideResp.json();
+						if (Array.isArray(overrideEvents) && overrideEvents.length > 0 && Array.isArray(overrideEvents[0].markets)) {
+							console.log(`[search] Player override hit! slug="${overrideSlug}" title="${overrideEvents[0].title}"`);
+							eventMarkets = overrideEvents[0].markets
 								.map(mapGammaMarketToMarket)
 								.filter((m: Market | null): m is Market => m !== null);
-							if (eventMarkets.length > 0) {
-								break;
-							}
 						}
 					}
 				} catch {
-					// best-effort; ignore and try next slug
+					// best-effort; continue to normal slug search
+				}
+				break;
+			}
+		}
+
+		// Build slug candidate list: AI predictions first (more likely correct),
+		// then mechanical permutations as fallback.
+		const mechanicalCandidates = buildEventSlugCandidates(searchTerms);
+		const aiNormalized = aiSlugPredictions.map(s =>
+			s.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-+|-+$/g, ''),
+		).filter(s => s.length >= 5);
+		// Deduplicate, preserving AI predictions first
+		const seenSlugs = new Set<string>();
+		const eventSlugCandidates: string[] = [];
+		for (const s of [...aiNormalized, ...mechanicalCandidates]) {
+			if (!seenSlugs.has(s)) { seenSlugs.add(s); eventSlugCandidates.push(s); }
+		}
+		console.log(`[search] Event slug candidates (${eventSlugCandidates.length}):`, eventSlugCandidates.slice(0, 6));
+
+		// Check slug candidates in parallel batches of 6 (faster than sequential)
+		const SLUG_BATCH = 6;
+		const eventScopes = ['closed=false', 'closed=true'];
+		for (const scope of eventScopes) {
+			if (eventMarkets.length > 0) break;
+			for (let i = 0; i < eventSlugCandidates.length && eventMarkets.length === 0; i += SLUG_BATCH) {
+				const batch = eventSlugCandidates.slice(i, i + SLUG_BATCH);
+				const batchResults = await Promise.all(batch.map(async slug => {
+					try {
+						const eventUrl = `${GAMMA_API_BASE}/events?${scope}&limit=1&slug=${encodeURIComponent(slug)}`;
+						const eventResp = await fetch(eventUrl);
+						if (!eventResp.ok) return null;
+						const events = await eventResp.json();
+						if (Array.isArray(events) && events.length > 0 && Array.isArray(events[0].markets) && events[0].markets.length > 0) {
+							return { slug, event: events[0] };
+						}
+					} catch { /* best-effort */ }
+					return null;
+				}));
+				// Take the first hit from this batch (order matters — AI predictions first)
+				for (const result of batchResults) {
+					if (result) {
+						console.log(`[search] Event hit! slug="${result.slug}" title="${result.event.title}" markets=${result.event.markets.length}`);
+						eventMarkets = result.event.markets
+							.map(mapGammaMarketToMarket)
+							.filter((m: Market | null): m is Market => m !== null);
+						break;
+					}
 				}
 			}
 		}
@@ -317,10 +712,16 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 				.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/)
 				.filter(w => w.length >= 2 && !SCORE_STOPWORDS.has(w));
 
+			// Build the phrase for phrase-match bonus (first 4 keywords joined)
+			const scorePhrase = scoreKeywords.slice(0, 4).join(' ');
+
 			const scoreMarket = (m: Market): number => {
 				if (scoreKeywords.length === 0) return 0;
 				const q = m.question.toLowerCase();
-				return scoreKeywords.filter(kw => q.includes(kw)).length;
+				const keywordHits = scoreKeywords.filter(kw => q.includes(kw)).length;
+				// Phrase bonus: +2 if ≥2 consecutive keywords appear as a phrase in question
+				const phraseBonus = scorePhrase.length >= 5 && q.includes(scorePhrase) ? 2 : 0;
+				return keywordHits + phraseBonus;
 			};
 
 			eventMarkets.sort((a, b) => {
@@ -338,7 +739,19 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 		}
 
 		// ──────────────────────────────────────────────────────────────────────
-		// 4. SUB-TAG MATCHING — fuzzy-match query against Polymarket's /tags
+		// 4. SPORTS-AWARE SEARCH — promoted above sub-tag matching so that
+		//    sports queries (vs-queries, team names) don't get swallowed by
+		//    generic tag matches ("nba" → returns all NBA events, not the game).
+		// ──────────────────────────────────────────────────────────────────────
+		console.log(`[search] Attempting sports-aware search for: "${searchTerms}"`);
+		const sportsResults = await this.searchSportsMarkets(searchTerms);
+		if (sportsResults.length > 0) {
+			console.log(`[search] Sports search found ${sportsResults.length} markets, returning as primary results`);
+			return sportsResults;
+		}
+
+		// ──────────────────────────────────────────────────────────────────────
+		// 5. SUB-TAG MATCHING — fuzzy-match query against Polymarket's /tags
 		// ──────────────────────────────────────────────────────────────────────
 		const tagMatch = await this.matchQueryToTag(searchTerms);
 		if (tagMatch) {
@@ -348,15 +761,6 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 				console.log(`[search] Returning ${tagResults.length} markets for tag "${tagMatch}"`);
 				return tagResults;
 			}
-		}
-
-		// Sports-aware search: detect if the query matches a known sport/esports category
-		// and search events by series_id with keyword matching.
-		console.log(`[search] Attempting sports-aware search for: "${searchTerms}"`);
-		const sportsResults = await this.searchSportsMarkets(searchTerms);
-		if (sportsResults.length > 0) {
-			console.log(`[search] Sports search found ${sportsResults.length} markets, returning as primary results`);
-			return sportsResults;
 		}
 
 		// --- Fallback: Events text search ---
@@ -412,8 +816,67 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 				deduped.set(m.id, m);
 			}
 		}
-		const results = rankMarkets([...deduped.values()]);
-		console.log(`[search] Results: slug=${slugResults.length} tag=${tagResults.length} text=${textResults.length} total=${results.length}`);
+
+		// Relevance filter: only keep markets whose question contains at least one
+		// query keyword. Without this, the Gamma API's tag/text_query fallback
+		// returns hundreds of irrelevant markets.
+		const filterKeywords = cleanedKeywords
+			.toLowerCase().replace(/[^a-z0-9\s&]/g, ' ').split(/\s+/)
+			.filter(w => w.length >= 2);
+		const FILTER_STOPWORDS = new Set([
+			// Articles / prepositions / conjunctions
+			'the', 'a', 'an', 'of', 'for', 'in', 'on', 'at', 'to', 'is', 'are', 'be',
+			'will', 'who', 'what', 'whats', 'how', 'which', 'and', 'or', 'vs', 'versus',
+			// Generic filler words (from cleanSearchKeywords NOISE_WORDS)
+			'market', 'markets', 'about', 'show', 'tell', 'me', 'please', 'check',
+			'hi', 'hey', 'can', 'you', 'give', 'find', 'get', 'current', 'live',
+			'update', 'updates', 'going', 'this', 'that', 'it', 'its', 'do', 'does',
+			'did', 'has', 'have', 'been', 'would', 'should', 'could', 'any',
+			'right', 'now', 'today', 'tonight', 'latest', 'looking', 'see',
+			'bring', 'up', 'odds', 'chance', 'chances', 'probability',
+			// Sports / esports generic terms (not team/player names)
+			'game', 'match', 'play', 'score', 'result', 'series', 'season',
+			'playoffs', 'league', 'tournament', 'cup', 'championship',
+			'sports', 'esports', 'regular', 'kickoff',
+		]);
+		const relevantKeywords = filterKeywords.filter(w => !FILTER_STOPWORDS.has(w));
+		// Separate word-keywords from numeric-only tokens (years like "2026" appear in
+		// almost every market and must not be the SOLE relevance signal).
+		const wordKeywords = relevantKeywords.filter(w => /[a-z]/.test(w));
+		const numericKeywords = relevantKeywords.filter(w => !/[a-z]/.test(w));
+		// When there are real word-keywords, require at least one to match.
+		// Fall back to any keyword (including numeric) only when there are no words.
+		const mustMatchKeywords = wordKeywords.length > 0 ? wordKeywords : numericKeywords;
+
+		let filtered: Market[];
+		if (mustMatchKeywords.length > 0) {
+			filtered = [...deduped.values()].filter(m => {
+				const q = m.question.toLowerCase();
+				return mustMatchKeywords.some(kw => q.includes(kw));
+			});
+			console.log(`[search] Relevance filter: ${deduped.size} → ${filtered.length} (keywords: ${relevantKeywords.join(', ')})`);
+		} else {
+			filtered = [...deduped.values()];
+		}
+
+		// Rank: active first, then by keyword-match score (desc), then by volume (desc).
+		// Using keyword score as secondary sort (after status) ensures that markets
+		// matching more query keywords (e.g. "Bitcoin Up or Down" for "bitcoin up or down")
+		// rank above high-volume markets matching only one keyword (e.g. "Will BTC hit $1M?").
+		const keywordScoreOf = (m: Market): number => {
+			const q = m.question.toLowerCase();
+			return relevantKeywords.filter(kw => q.includes(kw)).length;
+		};
+		filtered.sort((a, b) => {
+			const rankStatus = (s: Market['status']): number => s === 'active' ? 0 : s === 'paused' ? 1 : 2;
+			const statusDiff = rankStatus(a.status) - rankStatus(b.status);
+			if (statusDiff !== 0) return statusDiff;
+			const scoreDiff = keywordScoreOf(b) - keywordScoreOf(a);
+			if (scoreDiff !== 0) return scoreDiff;
+			return Math.log10(Math.max(b.volume || 1, 1)) - Math.log10(Math.max(a.volume || 1, 1));
+		});
+		const results = filtered;
+		console.log(`[search] Results: slug=${slugResults.length} tag=${tagResults.length} text=${textResults.length} relevant=${results.length}`);
 		return results;
 	}
 
@@ -524,22 +987,31 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 		const words = query.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length >= 3);
 		if (words.length === 0) return null;
 
-		// Try exact label match first
+		const lowerQuery = query.toLowerCase();
+
+		// Pass 1: the full tag label appears verbatim in the query
+		// e.g. query "UEFA Champions League winner" → label "champions league" → match
 		for (const tag of tags) {
 			const label = tag.label.toLowerCase();
-			if (words.includes(label) || query.toLowerCase().includes(label)) {
+			if (lowerQuery.includes(label)) {
 				return tag.slug;
 			}
 		}
-		// Try partial word match (e.g. "tariff" matches "Tariffs")
+
+		// Pass 2: ALL words of the tag label appear (as words) in the query words
+		// This prevents single-word false positives like "super" matching "Super Rugby Pacific"
+		// because "rugby" and "pacific" do NOT appear in the query.
 		for (const tag of tags) {
-			const label = tag.label.toLowerCase();
-			for (const w of words) {
-				if (label.startsWith(w) && w.length >= 4) {
-					return tag.slug;
-				}
+			const labelWords = tag.label.toLowerCase()
+				.replace(/[^a-z0-9\s]/g, ' ').split(/\s+/)
+				.filter(w => w.length >= 3);
+			if (labelWords.length === 0) continue;
+			const allMatch = labelWords.every(lw => words.includes(lw));
+			if (allMatch) {
+				return tag.slug;
 			}
 		}
+
 		return null;
 	}
 
@@ -606,12 +1078,37 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 	 *    (used when the user asks a general question like "show me lol markets").
 	 */
 	private async searchSportsMarkets(query: string): Promise<Market[]> {
-		const detectedSports = detectSportsFromQuery(query);
+		let detectedSports = detectSportsFromQuery(query);
 		const lowerQuery = query.toLowerCase();
 		const isVsQuery = lowerQuery.includes(' vs ') || lowerQuery.includes(' versus ');
 
-		// If no sport detected but query has "X vs Y", still try all esport series —
-		// this handles unknown teams without needing to maintain a complete alias list.
+		// Fetch sports metadata (cached) — needed for dynamic detection and series search.
+		const sportsMeta = await fetchSportsMetadata();
+		if (sportsMeta.length === 0) {
+			console.log('[search] Failed to fetch sports metadata, skipping sports search');
+			return [];
+		}
+
+		// Dynamic fallback: match query words against sport codes from the /sports endpoint.
+		// This covers 80+ sports not in SPORT_ALIASES (rugby, lacrosse, f1, etc.) without
+		// requiring a manually maintained exhaustive alias list.
+		if (detectedSports.length === 0) {
+			const queryWords = lowerQuery.replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length >= 2);
+			const dynamic: string[] = [];
+			for (const entry of sportsMeta) {
+				const code = entry.sport.toLowerCase();
+				// Word-match only — avoids false positives like "sc" in "gentzsch"
+				if (queryWords.includes(code)) {
+					dynamic.push(code);
+				}
+			}
+			if (dynamic.length > 0) {
+				console.log(`[search] Dynamic sport detection: ${dynamic.join(', ')}`);
+				detectedSports = dynamic;
+			}
+		}
+
+		// If still no sport detected, require a vs-query to continue.
 		if (detectedSports.length === 0 && !isVsQuery) {
 			return [];
 		}
@@ -619,21 +1116,36 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 		if (detectedSports.length > 0) {
 			console.log(`[search] Sports detected from query: ${detectedSports.join(', ')}`);
 		} else {
-			console.log('[search] No sport detected — vs-query, will try all esport series');
-		}
-
-		// Fetch sports metadata (cached)
-		const sportsMeta = await fetchSportsMetadata();
-		if (sportsMeta.length === 0) {
-			console.log('[search] Failed to fetch sports metadata, skipping sports search');
-			return [];
+			console.log('[search] No sport detected — vs-query, will try all sports series');
 		}
 
 		// When a specific sport was detected, search only that sport's series.
-		// When no sport detected (unknown teams in a vs-query), search ALL esport series
-		// so any team name works without needing to maintain a complete alias list.
-		const ESPORT_CODES = ['lol', 'cs2', 'dota2', 'val', 'mlbb', 'ow', 'codmw', 'rl', 'sc2', 'pubg', 'csa', 'lcs'];
-		const sportsToSearch = detectedSports.length > 0 ? detectedSports : ESPORT_CODES;
+		// For unknown vs-queries (no sport detected), search a curated set covering
+		// every major sport — esports and top traditional leagues first.
+		// The early-exit (break on first match) keeps this fast for most queries.
+		// For truly obscure matchups with no match here, we correctly return 0 results.
+		const COMMON_SPORT_CODES = [
+			// Esports — highest vs-query volume
+			'cs2', 'lol', 'dota2', 'val', 'mlbb', 'ow', 'codmw', 'rl', 'sc2', 'sc', 'pubg',
+			'lcs', 'lpl', 'r6siege', 'wildrift',
+			// Big 4 North American
+			'nba', 'nfl', 'nhl', 'mlb', 'wnba', 'ncaab', 'cfb',
+			// Soccer
+			'epl', 'lal', 'bun', 'sea', 'ucl', 'uel', 'mls', 'fifa',
+			'fl1', 'ere', 'arg', 'bra', 'por', 'mex', 'spl', 'tur',
+			'jap', 'kor', 'nor', 'efl', 'ssc',
+			// Combat / Racket / Other
+			'ufc', 'zuffa', 'atp', 'wta',
+			// Cricket
+			'ipl', 'odi', 't20', 'test', 'kbo', 'wbc',
+			// Rugby
+			'ruprem', 'rutopft', 'rusixnat', 'ruurc', 'rusrp',
+			// Hockey
+			'khl', 'shl',
+			// Olympics / other
+			'mwoh', 'euroleague',
+		];
+		const sportsToSearch = detectedSports.length > 0 ? detectedSports : COMMON_SPORT_CODES;
 
 		// --- Strategy 1: Series-specific search ---
 		// Extract meaningful keywords from the query (abbreviations, team names, etc.)
@@ -647,10 +1159,13 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 			'vs', 'versus', 'status', 'live', 'current', 'update', 'updates', 'score', 'now', 'rn',
 			'do', 'does', 'did', 'has', 'have', 'been', 'would', 'should', 'could', 'any',
 			'today', 'tonight', 'right', 'currently', 'latest', 'looking', 'see',
+			'up', 'bring', 'odds', 'chance', 'chances', 'on', 'at', 'to', 'be',
 			// sport/league words
 			'lol', 'lck', 'lpl', 'lec', 'lcs', 'nba', 'nfl', 'mlb', 'nhl', 'cs2', 'val',
-			'esports', 'sports', 'season', 'match', 'game', 'series', 'playoffs', 'league',
-			'cup', 'tournament', 'kickoff', 'regular', 'bo3', 'bo5', 'bo1', 'bo2',
+			'esports', 'sports', 'season', 'match', 'game', 'series',
+			'kickoff', 'regular', 'bo3', 'bo5', 'bo1', 'bo2',
+			// NOTE: do NOT add 'playoffs', 'tournament', 'cup', 'league' here —
+			// those are valid search targets (e.g. "NBA playoffs", "Champions League")
 		]);
 		const queryKeywords = lowerQuery
 			.replace(/[^a-z0-9\s]/g, ' ')
@@ -658,6 +1173,37 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 			.filter(w => w.length >= 2 && !STOPWORDS.has(w));
 
 		console.log(`[search] Series search keywords: ${queryKeywords.join(', ')}`);
+
+		// For vs-queries ("X vs Y"), teams are often abbreviated in slugs/titles.
+		// Instead of requiring ALL keywords to match, split by "vs" and match
+		// if ANY keyword from EITHER team appears in the event haystack.
+		// EXCEPTION: when no sport is detected (broad fallback scan), require BOTH teams
+		// to have at least one match — prevents "tom" matching "Tom Paris" when searching
+		// a broad list of sports that includes tennis.
+		const isAllSportsFallback = detectedSports.length === 0;
+		let matchEvent: (haystack: string) => boolean;
+		if (isVsQuery) {
+			const vsParts = lowerQuery.split(/\s+vs\.?\s+/);
+			const leftKws = (vsParts[0] ?? '')
+				.replace(/[^a-z0-9\s]/g, ' ').split(/\s+/)
+				.filter(w => w.length >= 2 && !STOPWORDS.has(w));
+			const rightKws = (vsParts.slice(1).join(' '))
+				.replace(/[^a-z0-9\s]/g, ' ').split(/\s+/)
+				.filter(w => w.length >= 2 && !STOPWORDS.has(w));
+			console.log(`[search] VS split — left: [${leftKws}], right: [${rightKws}]`);
+			matchEvent = (h: string) => {
+				const lMatch = leftKws.length > 0 && leftKws.some(kw => new RegExp('\\b' + kw + '\\b').test(h));
+				const rMatch = rightKws.length > 0 && rightKws.some(kw => new RegExp('\\b' + kw + '\\b').test(h));
+				// Broad fallback: require both teams to appear (avoids "tom" matching "Tom Paris" in ATP)
+				// Sport-specific: OR is fine — the scope already guarantees sport relevance
+				return isAllSportsFallback ? (lMatch && rMatch) : (lMatch || rMatch);
+			};
+		} else {
+			matchEvent = (h: string) => queryKeywords.every(kw => new RegExp('\\b' + kw + '\\b').test(h));
+		}
+		// Normalize accents in haystacks before matching to prevent false positives
+		// like \btom\b matching "Tomé" (accent é is \W, creating a word boundary).
+		const normHaystack = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
 		if (queryKeywords.length > 0) {
 			const seriesDeduped = new Map<string, Market>();
@@ -669,8 +1215,10 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 
 				const seriesIds = entry.series.split(',').map(s => s.trim()).filter(Boolean);
 				for (const seriesId of seriesIds.slice(0, 2)) { // max 2 series per sport
-					// Paginate up to 3 pages (60 events) looking for keyword matches
-					for (let offset = 0; offset <= 40; offset += 20) {
+					// Paginate deeper for specific keyword queries (team name, player);
+					// large series like NBA can have 100+ events per page.
+					const MAX_OFFSET = queryKeywords.length > 0 ? 180 : 40;
+					for (let offset = 0; offset <= MAX_OFFSET; offset += 20) {
 						try {
 							const url = `${GAMMA_API_BASE}/events?series_id=${seriesId}&closed=false&limit=20&offset=${offset}`;
 							const resp = await fetch(url);
@@ -692,12 +1240,12 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 								// hundreds of irrelevant events when query contains common words.
 								const eventSlug = (event.slug ?? '').toLowerCase();
 								const eventTitle = (event.title ?? '').toLowerCase();
-								const haystack = eventSlug + ' ' + eventTitle;
-								const matchCount = queryKeywords.filter(kw => haystack.includes(kw)).length;
-								const isMatch = matchCount === queryKeywords.length; // ALL keywords must match
-								if (!isMatch) continue;
+								const haystack = normHaystack(eventSlug + ' ' + eventTitle);
+								// Use either-team matching for vs-queries (one team may be abbreviated in slug/title),
+								// all-keywords matching for other queries (avoids returning unrelated events).
+								if (!matchEvent(haystack)) continue;
 
-								console.log(`[search] Series hit: "${event.title}" (slug=${event.slug})`);
+								console.log(`[search] Series hit: "${event.title}" (slug=${event.slug})`)
 								for (const raw of event.markets) {
 									const m = mapGammaMarketToMarket(raw);
 									if (m && !seriesDeduped.has(m.id)) {
@@ -734,9 +1282,8 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 									if (!Array.isArray(event.markets)) continue;
 									const eventSlug = (event.slug ?? '').toLowerCase();
 									const eventTitle = (event.title ?? '').toLowerCase();
-									const haystack = eventSlug + ' ' + eventTitle;
-									const isMatch = queryKeywords.some(kw => haystack.includes(kw));
-									if (!isMatch) continue;
+									const haystack = normHaystack(eventSlug + ' ' + eventTitle);
+									if (!matchEvent(haystack)) continue;
 									console.log(`[search] Series (closed) hit: "${event.title}"`);
 									for (const raw of event.markets) {
 										const m = mapGammaMarketToMarket(raw);
@@ -753,6 +1300,10 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 						}
 					}
 				}
+
+				// Early exit: stop scanning remaining sports as soon as we find a match.
+				// Critical for all-sports scans to avoid 150+ unnecessary API calls.
+				if (seriesMarkets.length > 0) break;
 			}
 
 			if (seriesMarkets.length > 0) {
@@ -806,7 +1357,7 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 
 		for (const tagId of [...tagIds].slice(0, 3)) {
 			try {
-				const eventUrl = `${GAMMA_API_BASE}/events?tag_id=${tagId}&closed=false&limit=20&active=true`;
+				const eventUrl = `${GAMMA_API_BASE}/events?tag_id=${tagId}&closed=false&limit=50&active=true`;
 				const resp = await fetch(eventUrl);
 				if (!resp.ok) continue;
 
@@ -815,11 +1366,15 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 
 				for (const event of events) {
 					if (!Array.isArray(event.markets)) continue;
-					const eventTitle = (event.title ?? '').toLowerCase();
-					const isRelevant = sportKeywords.some(kw => eventTitle.includes(kw));
-					if (!isRelevant) {
-						console.log(`[search] Skipping irrelevant event: "${event.title}"`);
-						continue;
+					// tag_id already guarantees sport relevance — don't additionally filter
+					// by sport keyword (drops valid events like "NAVI vs FaZe" that have no
+					// "cs2" in the title). Instead, if we have specific query keywords,
+					// match events to the query using the same matchEvent logic.
+					if (queryKeywords.length > 0) {
+						const eventTitle = (event.title ?? '').toLowerCase();
+						const eventSlug = ((event as { slug?: string }).slug ?? '').toLowerCase();
+						const haystack = eventSlug + ' ' + eventTitle;
+						if (!matchEvent(haystack)) continue;
 					}
 					console.log(`[search] Tag event: "${event.title}" (${event.markets.length} markets)`);
 					for (const raw of event.markets) {
@@ -835,15 +1390,62 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 			}
 		}
 
+		// Sort: active first, then keyword relevance score (matches query keywords),
+		// then volume. This ensures e.g. "NBA playoffs" ranks playoff markets above
+		// high-volume season-award markets.
+		const tagScoreOf = (m: Market): number => {
+			if (queryKeywords.length === 0) return 0;
+			const q = m.question.toLowerCase();
+			return queryKeywords.filter(kw => q.includes(kw)).length;
+		};
 		allMarkets.sort((a, b) => {
 			const rank = (s: Market['status']): number => s === 'active' ? 0 : s === 'paused' ? 1 : 2;
 			const statusDiff = rank(a.status) - rank(b.status);
 			if (statusDiff !== 0) return statusDiff;
+			const scoreDiff = tagScoreOf(b) - tagScoreOf(a);
+			if (scoreDiff !== 0) return scoreDiff;
 			return b.volume - a.volume;
 		});
 
 		const activeCount = allMarkets.filter(m => m.status === 'active').length;
 		console.log(`[search] Tag search: ${allMarkets.length} total markets, ${activeCount} active`);
+
+		// For specific vs-queries (e.g. "Clippers vs Warriors", "T1 vs NAVI"), filter down to
+		// markets whose question contains ALL of the team/player keywords (strict match).
+		// Prevents unrelated markets (e.g. "NAVI vs B8" for "T1 vs NAVI").
+		if (isVsQuery && queryKeywords.length > 0) {
+			// Include short team codes (e.g. "t1", "g2") — allow length ≥2
+			const filterKws = queryKeywords.filter(kw => kw.length >= 2);
+			if (filterKws.length > 0) {
+				// Strict: ALL keywords must appear in the question
+				const strictFiltered = allMarkets.filter(m => {
+					const q = m.question.toLowerCase();
+					return filterKws.every(kw => q.includes(kw));
+				});
+				if (strictFiltered.length > 0) {
+					console.log(`[search] vs-query strict filter: ${allMarkets.length} → ${strictFiltered.length} (all: ${filterKws.join(', ')})`);
+					return strictFiltered;
+				}
+				// Strict found nothing. Try loose with long keywords (≥5 chars) for
+				// team names like "clippers" where individual team futures are useful.
+				// Skip loose for short codes (t1, g2) to avoid unrelated picks.
+				const longKws = filterKws.filter(kw => kw.length >= 5);
+				if (longKws.length > 0) {
+					const looseFiltered = allMarkets.filter(m => {
+						const q = m.question.toLowerCase();
+						return longKws.some(kw => q.includes(kw));
+					});
+					if (looseFiltered.length > 0) {
+						console.log(`[search] vs-query loose filter: ${allMarkets.length} → ${looseFiltered.length} (any: ${longKws.join(', ')})`);
+						return looseFiltered;
+					}
+				}
+				// Nothing found — this matchup has no Polymarket market
+				console.log(`[search] vs-query filter: no matching markets for this matchup, returning empty`);
+				return [];
+			}
+		}
+
 		return allMarkets;
 	}
 
@@ -881,6 +1483,46 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 				}
 			}
 		}
+
+		// Fallback: events text_query search — catches events where the slug doesn't
+		// match any of our candidates (e.g. "will-jayson-tatum-play-a-game-this-season").
+		// IMPORTANT: filter by keyword relevance — the events text_query API can return
+		// popular unrelated events if the specific query term isn't found.
+		const textQueryKeywords = cleanedQuery
+			.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/)
+			.filter(w => w.length >= 3 && /[a-z]/.test(w) &&
+				!new Set(['the','for','will','who','what','and','market','about','this','that']).has(w));
+		if (textQueryKeywords.length > 0) {
+			try {
+				const url = `${GAMMA_API_BASE}/events?closed=false&limit=5&text_query=${encodeURIComponent(cleanedQuery)}`;
+				const resp = await fetch(url);
+				if (resp.ok) {
+					const events = await resp.json();
+					if (Array.isArray(events)) {
+						const allMarkets: Market[] = [];
+						for (const event of events) {
+							if (!Array.isArray(event.markets)) continue;
+							// Only accept events whose title is relevant to the query
+							const title = (event.title ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+							const titleRelevant = textQueryKeywords.some(kw => title.includes(kw));
+							if (!titleRelevant) {
+								console.log(`[search] Events text_query: skipping irrelevant event "${event.title}"`);
+								continue;
+							}
+							console.log(`[search] Events text_query hit: "${event.title}" (${event.markets.length} markets)`);
+							for (const raw of event.markets) {
+								const m = mapGammaMarketToMarket(raw);
+								if (m) allMarkets.push(m);
+							}
+						}
+						if (allMarkets.length > 0) return allMarkets;
+					}
+				}
+			} catch {
+				// best-effort
+			}
+		}
+
 		return [];
 	}
 }
@@ -1097,6 +1739,95 @@ async function extractSearchKeywords(message: string): Promise<string> {
 }
 
 /**
+ * Combined AI call that extracts search keywords AND predicts likely Polymarket
+ * event slug fragments in a single round-trip. This replaces the previous
+ * two-step process (keywords first, then mechanical slug permutations only).
+ *
+ * For short / vs-queries where AI isn't needed, returns immediately without
+ * any network call. Falls back gracefully when AI is unavailable.
+ */
+async function extractKeywordsAndSlugs(message: string): Promise<{ keywords: string; slugPredictions: string[] }> {
+	const stripped = stripConversationalPrefix(message);
+
+	// vs-queries: return immediately — sports search handles these
+	const isVsQuery = /\b(vs\.?|versus)\b/i.test(stripped) && stripped.split(/\s+/).length <= 6;
+	if (isVsQuery) {
+		console.log(`[extractKeywordsAndSlugs] vs-query, no AI needed: "${stripped}"`);
+		return { keywords: stripped, slugPredictions: [] };
+	}
+
+	// Only skip AI for very trivial 1-2 word queries (e.g. "bitcoin", "trump").
+	// For anything 3+ words, call AI — even short phrases like "trump tariff canada"
+	// (3 words) benefit greatly from AI-predicted slugs like "will-trump-impose-tariffs-on-canada".
+	const strippedWords = stripped.trim().split(/\s+/).length;
+	if (strippedWords <= 2) {
+		console.log(`[extractKeywordsAndSlugs] Very short query, using stripped: "${stripped}"`);
+		return { keywords: stripped, slugPredictions: [] };
+	}
+
+	if (!hasGeminiKeys()) {
+		return { keywords: stripped, slugPredictions: [] };
+	}
+
+	try {
+		const raw = await callGemini({
+			contents: stripped,
+			systemInstruction: [
+				'Given a search query, return a JSON object with two fields:',
+				'  "keywords": the core topic (remove conversational words like "tell me about", "what is", "show me the", "current status"; keep proper names, numbers, years exactly)',
+				'  "slugs": array of 3-5 predicted Polymarket event slug fragments',
+				'',
+				'Polymarket slug format: lowercase, hyphen-separated, no articles/prepositions.',
+				'Patterns: yes/no events start with "will-"; include the main action verb; use FULL proper names.',
+				'',
+				'Return ONLY valid JSON. No explanation.',
+				'',
+				'Examples:',
+				'{"keywords":"trump tariff canada","slugs":["will-trump-impose-tariffs-on-canada","trump-canada-tariffs-2025","will-trump-tariff-canada"]}',
+				'{"keywords":"bitcoin reach 100k","slugs":["will-bitcoin-hit-100k","will-bitcoin-reach-100000","bitcoin-price-100k-2025"]}',
+				'{"keywords":"fed rate cut march","slugs":["will-fed-cut-rates-march","federal-reserve-rate-cut-2025","will-fed-lower-rates"]}',
+				'{"keywords":"iran nuclear deal","slugs":["will-iran-sign-nuclear-deal","iran-nuclear-agreement-2025","will-iran-rejoin-jcpoa"]}',
+				'{"keywords":"gavin newsom president 2028","slugs":["will-gavin-newsom-run-for-president","gavin-newsom-2028-president","will-gavin-newsom-win-2028"]}',
+				'{"keywords":"show me politics","slugs":[]}',
+				'{"keywords":"any new markets","slugs":[]}',
+			].join('\n'),
+			temperature: 0.1,
+			maxOutputTokens: 200,
+			jsonMode: true,
+		});
+
+		if (raw) {
+			const parsed = JSON.parse(raw);
+			if (parsed && typeof parsed === 'object') {
+				const kw = typeof parsed.keywords === 'string' && parsed.keywords.trim()
+					? parsed.keywords.trim()
+					: stripped;
+
+				// Validate keywords — same checks as extractSearchKeywords
+				const inputWords = stripped.trim().split(/\s+/).filter(w => w.length > 2);
+				const outputWords = kw.split(/\s+/);
+				const tooAggressive = inputWords.length >= 4 && outputWords.length === 1;
+				const inputProperNouns = stripped.split(/\s+/).filter(w => /^[A-Z][a-z]{1,}/.test(w));
+				const droppedProperNoun = inputProperNouns.some(n => !kw.toLowerCase().includes(n.toLowerCase()));
+				const safeKeywords = (tooAggressive || (inputProperNouns.length > 0 && droppedProperNoun))
+					? stripped
+					: kw;
+
+				const slugPredictions = Array.isArray(parsed.slugs)
+					? parsed.slugs.filter((s: unknown) => typeof s === 'string' && s.length >= 5).slice(0, 5)
+					: [];
+
+				return { keywords: safeKeywords, slugPredictions };
+			}
+		}
+	} catch (err) {
+		console.log(`[extractKeywordsAndSlugs] AI call failed: ${err}`);
+	}
+
+	return { keywords: stripped, slugPredictions: [] };
+}
+
+/**
  * Words that are conversational noise — NOT part of team/event names.
  * Used when extracting team1 from text before "vs".
  */
@@ -1206,6 +1937,7 @@ function stripConversationalPrefix(query: string): string {
  */
 function buildEventSlugCandidates(query: string): string[] {
 	const words = query
+		.normalize('NFD').replace(/[\u0300-\u036f]/g, '') // "Rodríguez" → "Rodriguez"
 		.toLowerCase()
 		.replace(/[^a-z0-9\s]/g, ' ')
 		.split(/\s+/)
@@ -1264,26 +1996,79 @@ function buildEventSlugCandidates(query: string): string[] {
 	// Stripped query is the next best candidate
 	add(slugify(stripped));
 
-	// Sliding windows on CORE words — most likely to match event slugs
-	for (let size = Math.min(6, coreWords.length); size >= 2; size--) {
-		for (let start = 0; start + size <= coreWords.length; start++) {
-			add(slugify(coreWords.slice(start, start + size)));
-		}
-		if (candidates.length >= 10) break;
-	}
-
-	// Sliding windows on ALL stripped words (larger windows)
-	for (let size = Math.min(8, stripped.length); size >= 3; size--) {
+	// Sliding windows on ALL stripped words first — these match real Polymarket event
+	// slugs better because those slugs keep "of", "the", etc. (e.g. "venezuela-leader-end-of-2026")
+	for (let size = Math.min(8, stripped.length); size >= 2; size--) {
 		for (let start = 0; start + size <= stripped.length; start++) {
 			add(slugify(stripped.slice(start, start + size)));
 		}
 		if (candidates.length >= 15) break;
 	}
 
+	// Sliding windows on CORE words — noise-free variants as additional candidates
+	for (let size = Math.min(6, coreWords.length); size >= 2; size--) {
+		for (let start = 0; start + size <= coreWords.length; start++) {
+			add(slugify(coreWords.slice(start, start + size)));
+		}
+		if (candidates.length >= 20) break;
+	}
+
+	// Try "will-" prefixed versions of top candidates — most Polymarket yes/no
+	// event slugs start with "will-" (e.g. "will-messi-play-in-2026-world-cup")
+	const topForWill = candidates.slice(0, 6);
+	for (const c of topForWill) {
+		if (!c.startsWith('will-')) add(`will-${c}`);
+	}
+
+	// Try year-first ordering (e.g. "2026-ncaa-tournament-winner" instead of "ncaa-tournament-winner-2026")
+	const yearTokens = coreWords.filter(w => /^\d{4}$/.test(w));
+	const nonYearCore = coreWords.filter(w => !/^\d{4}$/.test(w));
+	if (yearTokens.length > 0 && nonYearCore.length >= 2) {
+		add(slugify([...yearTokens, ...nonYearCore]));
+		add(slugify([...yearTokens, ...nonYearCore.slice(0, 3)]));
+	}
+
 	// Full query slug as last resort
 	add(slugify(words));
 
-	return candidates.slice(0, 15);
+	// --- Player name expansion ---
+	// Many Polymarket slugs use the player's full legal name (e.g. "will-lionel-messi-..."
+	// instead of "will-messi-..."). Expand known nicknames/last-names → full names
+	// and generate additional slug candidates.
+	const PLAYER_EXPANSIONS: Record<string, string[]> = {
+		messi: ['lionel', 'messi'],
+		ronaldo: ['cristiano', 'ronaldo'],
+		neymar: ['neymar'],
+		mbappe: ['kylian', 'mbappe'],
+		mbapp: ['kylian', 'mbappe'],
+		wembanyama: ['victor', 'wembanyama'],
+		tatum: ['jayson', 'tatum'],
+		lebron: ['lebron', 'james'],
+		embiid: ['joel', 'embiid'],
+		doncic: ['luka', 'doncic'],
+		luka: ['luka', 'doncic'],
+		antetokounmpo: ['giannis', 'antetokounmpo'],
+		giannis: ['giannis', 'antetokounmpo'],
+		jokic: ['nikola', 'jokic'],
+		lillard: ['damian', 'lillard'],
+		gilgeous: ['shai', 'gilgeous-alexander'],
+	};
+	for (const [nickname, fullName] of Object.entries(PLAYER_EXPANSIONS)) {
+		if (coreWords.includes(nickname)) {
+			// Replace the nickname with the full name tokens in core words
+			const expanded = coreWords.flatMap(w => w === nickname ? fullName : [w]);
+			if (expanded.length !== coreWords.length || expanded.join(' ') !== coreWords.join(' ')) {
+				add(slugify(expanded));
+				add(`will-${slugify(expanded)}`);
+				// Also try with "lionel messi" inserted into other positions
+				const expandedWindows = expanded.slice(0, 6);
+				add(slugify(expandedWindows));
+			}
+			break; // one player per query
+		}
+	}
+
+	return candidates.slice(0, 30);
 }
 
 /**

@@ -1,4 +1,4 @@
-# Discord Polymarket Bot — Architecture
+v# Discord Polymarket Bot — Architecture
 
 ## High-Level Overview
 
