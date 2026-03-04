@@ -53,17 +53,19 @@ const SPORT_ALIASES: Record<string, string[]> = {
 		'c9', 'cloud9', 'tl', 'team liquid', 'fly', 'flyquest', '100t', '100 thieves',
 		'eg', 'evil geniuses', 'nrg', 'dignitas', 'immortals', 'shopify rebellion', 'shopify',
 		// LEC (EU) teams
-		'g2', 'g2 esports', 'g2 ares', 'fnatic', 'excel', 'xls', 'sk gaming', 'sk',
+		'g2', 'g2 esports', 'fnatic', 'excel', 'xls', 'sk gaming', 'sk',
 		'misfits', 'rogue', 'mad lions', 'mad', 'astralis', 'vitality', 'team vitality',
 		'heretics', 'giantx', 'karmine corp', 'karmine', 'kcorp',
-		// ERL / Academy / ERB sub-league teams
-		'nord', 'nordguard', 'ww team', 'wwteam', 'ww', 'use1', 'use2',
+		// ERL / Academy sub-league teams (LoL-specific)
+		'nord', 'nordguard', 'g2 nord', 'use1', 'use2',
 		'lyon', 'ldlc', 'rwc', 'bbl esports', 'bbl',
-		'team bds', 'bds', 'movistar', 'natus vincere', 'navi'],
+		'unicorns of love', 'uol', 'team bds', 'bds', 'movistar', 'natus vincere', 'navi'],
 	cs2: ['counter strike', 'counter-strike', 'cs2', 'csgo', 'cs go', 'cs:go', 'hltv',
-		'navi', 'faze', 'vitality', 'g2 esports', 'astralis', 'cloud9', 'mouz', 'spirit',
+		'navi', 'faze', 'vitality', 'g2 esports', 'g2 ares', 'g2a', 'astralis', 'cloud9', 'mouz', 'spirit',
 		'heroic', 'ence', 'liquid', 'complexity', 'fnatic', 'big', 'nip', 'virtus.pro',
-		// ESL/BLAST teams (teams that compete in both CS2 and other esports)
+		// WW Team (ESL Challenger / regional CS2 team)
+		'ww team', 'ww', 'wwteam',
+		// ESL/BLAST teams
 		'3dmax', '3 dmax', 'gaimin', 'gaimin gladiators', 'saw', 'passion ua',
 		'furia', 'mibr', 'imperial', 'monte', 'betboom', 'forze', 'aurora',
 		'eternfire', 'spirit cs', 'team vitality', 'team liquid'],
@@ -382,6 +384,63 @@ const SPORT_ALIASES: Record<string, string[]> = {
 const ESPORTS_TAG_LABELS = ['esports', 'lol', 'league of legends', 'cs2', 'dota2', 'valorant'];
 
 /**
+ * Maps full esports/sports team names to their slug abbreviations.
+ * Applied during keyword extraction so "JD Gaming" → "jdg" matches
+ * event slugs like `lol-jdg-blg-2026-03-04`.
+ */
+const TEAM_ABBREVIATIONS: Record<string, string> = {
+	// LPL (LoL)
+	'jd gaming': 'jdg',
+	'bilibili gaming': 'blg',
+	'top esports': 'tes',
+	'weibo gaming': 'wbg',
+	'invictus gaming': 'ig',
+	'funplus phoenix': 'fpx',
+	'ninjas in pyjamas': 'nip',
+	"anyone's legend": 'al',
+	'anyones legend': 'al',
+	'royal never give up': 'rng',
+	'edward gaming': 'edg',
+	'lng esports': 'lng',
+	'oh my god': 'omg',
+	'rare atom': 'ra',
+	// LCK (LoL)
+	'kt rolster': 'ktc',
+	'dplus kia': 'dk',
+	'hanwha life esports': 'hle',
+	'hanwha life': 'hle',
+	'nongshim redforce': 'ns',
+	'bnk fearx': 'bnk',
+	'kwangdong freecs': 'dnf',
+	// LCS / LEC (LoL)
+	'team liquid': 'tl',
+	'cloud9': 'c9',
+	'evil geniuses': 'eg',
+	'counter logic gaming': 'clg',
+	'golden guardians': 'gg',
+	'flyquest': 'fly',
+	'100 thieves': '100t',
+	'shopify rebellion': 'shopify',
+	'g2 esports': 'g2',
+	'team vitality': 'vit',
+	'mad lions': 'mad',
+	'karmine corp': 'kc',
+	'team bds': 'bds',
+	// CS2
+	'natus vincere': 'navi',
+	'g2 ares': 'g2a',
+	'team spirit': 'spirit',
+	'virtus pro': 'vp',
+	'team heretics': 'heretics',
+	// Valorant
+	'sentinels': 'sen',
+	'paper rex': 'prx',
+	'loud esports': 'loud',
+	// General
+	'colossal gaming': 'cg',
+};
+
+/**
  * Category keywords → Gamma API tag slugs.
  * "show me politics" → fetch events tagged "politics".
  */
@@ -474,6 +533,7 @@ const TAGS_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 interface GammaMarketResponse {
 	readonly id?: string;
 	readonly condition_id?: string;
+	readonly conditionId?: string; // Gamma API returns camelCase
 	readonly question?: string;
 	readonly title?: string; // events payload may use title
 	readonly slug?: string; // URL-friendly slug for constructing Polymarket/Olympus links
@@ -1115,8 +1175,12 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 
 		if (detectedSports.length > 0) {
 			console.log(`[search] Sports detected from query: ${detectedSports.join(', ')}`);
+		} else if (!isVsQuery) {
+			// No sport detected AND not a vs-query — can't do anything useful.
+			console.log('[search] No sport detected and not a vs-query, skipping sports search');
+			return [];
 		} else {
-			console.log('[search] No sport detected — vs-query, will try all sports series');
+			console.log('[search] No sport detected — vs-query, will try all sports series (shallow)');
 		}
 
 		// When a specific sport was detected, search only that sport's series.
@@ -1162,7 +1226,7 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 			'up', 'bring', 'odds', 'chance', 'chances', 'on', 'at', 'to', 'be',
 			// sport/league words
 			'lol', 'lck', 'lpl', 'lec', 'lcs', 'nba', 'nfl', 'mlb', 'nhl', 'cs2', 'val',
-			'esports', 'sports', 'season', 'match', 'game', 'series',
+			'esports', 'sports', 'season', 'match', 'game', 'gaming', 'series',
 			'kickoff', 'regular', 'bo3', 'bo5', 'bo1', 'bo2',
 			// NOTE: do NOT add 'playoffs', 'tournament', 'cup', 'league' here —
 			// those are valid search targets (e.g. "NBA playoffs", "Champions League")
@@ -1172,31 +1236,50 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 			.split(/\s+/)
 			.filter(w => w.length >= 2 && !STOPWORDS.has(w));
 
+		// Expand full team names to abbreviations (e.g., "JD Gaming" → "jdg")
+		// so keywords can match event slugs like `lol-jdg-blg-2026-03-04`.
+		for (const [fullName, abbr] of Object.entries(TEAM_ABBREVIATIONS)) {
+			if (lowerQuery.includes(fullName) && !queryKeywords.includes(abbr)) {
+				queryKeywords.push(abbr);
+			}
+		}
+
 		console.log(`[search] Series search keywords: ${queryKeywords.join(', ')}`);
 
-		// For vs-queries ("X vs Y"), teams are often abbreviated in slugs/titles.
-		// Instead of requiring ALL keywords to match, split by "vs" and match
-		// if ANY keyword from EITHER team appears in the event haystack.
-		// EXCEPTION: when no sport is detected (broad fallback scan), require BOTH teams
-		// to have at least one match — prevents "tom" matching "Tom Paris" when searching
-		// a broad list of sports that includes tennis.
-		const isAllSportsFallback = detectedSports.length === 0;
+		// For vs-queries ("X vs Y"), split by "vs" and require BOTH teams
+		// to have at least one keyword match. Previously used OR logic for
+		// sport-specific queries, but that causes false positives when
+		// generic words like "gaming" match many event titles.
 		let matchEvent: (haystack: string) => boolean;
 		if (isVsQuery) {
 			const vsParts = lowerQuery.split(/\s+vs\.?\s+/);
-			const leftKws = (vsParts[0] ?? '')
+			const leftRaw = (vsParts[0] ?? '')
 				.replace(/[^a-z0-9\s]/g, ' ').split(/\s+/)
 				.filter(w => w.length >= 2 && !STOPWORDS.has(w));
-			const rightKws = (vsParts.slice(1).join(' '))
+			const rightRaw = (vsParts.slice(1).join(' '))
 				.replace(/[^a-z0-9\s]/g, ' ').split(/\s+/)
 				.filter(w => w.length >= 2 && !STOPWORDS.has(w));
+
+			// Inject team abbreviations into left/right keyword sets
+			const leftText = (vsParts[0] ?? '').toLowerCase();
+			const rightText = (vsParts.slice(1).join(' ')).toLowerCase();
+			for (const [fullName, abbr] of Object.entries(TEAM_ABBREVIATIONS)) {
+				if (leftText.includes(fullName) && !leftRaw.includes(abbr)) leftRaw.push(abbr);
+				if (rightText.includes(fullName) && !rightRaw.includes(abbr)) rightRaw.push(abbr);
+			}
+
+			const leftKws = leftRaw;
+			const rightKws = rightRaw;
 			console.log(`[search] VS split — left: [${leftKws}], right: [${rightKws}]`);
 			matchEvent = (h: string) => {
-				const lMatch = leftKws.length > 0 && leftKws.some(kw => new RegExp('\\b' + kw + '\\b').test(h));
-				const rMatch = rightKws.length > 0 && rightKws.some(kw => new RegExp('\\b' + kw + '\\b').test(h));
-				// Broad fallback: require both teams to appear (avoids "tom" matching "Tom Paris" in ATP)
-				// Sport-specific: OR is fine — the scope already guarantees sport relevance
-				return isAllSportsFallback ? (lMatch && rMatch) : (lMatch || rMatch);
+				// Use prefix-aware matching (\b at start only) so "warrior" matches "warriors",
+				// "clipper" matches "clippers", etc. Leading \b prevents "jd" matching in "mjd".
+				const kwMatch = (kw: string, hay: string) => new RegExp('\\b' + kw).test(hay);
+				const lMatch = leftKws.length > 0 && leftKws.some(kw => kwMatch(kw, h));
+				const rMatch = rightKws.length > 0 && rightKws.some(kw => kwMatch(kw, h));
+				// Always require BOTH teams to match — prevents false positives
+				// from generic words like "gaming" matching unrelated events
+				return lMatch && rMatch;
 			};
 		} else {
 			matchEvent = (h: string) => queryKeywords.every(kw => new RegExp('\\b' + kw + '\\b').test(h));
@@ -1215,9 +1298,10 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 
 				const seriesIds = entry.series.split(',').map(s => s.trim()).filter(Boolean);
 				for (const seriesId of seriesIds.slice(0, 2)) { // max 2 series per sport
-					// Paginate deeper for specific keyword queries (team name, player);
-					// large series like NBA can have 100+ events per page.
-					const MAX_OFFSET = queryKeywords.length > 0 ? 180 : 40;
+					// Paginate deeper when a specific sport was detected (only 1-2 series);
+					// shallow when scanning all sports (no sport detected, ~50 sports).
+					const isSpecificSport = detectedSports.length > 0;
+					const MAX_OFFSET = isSpecificSport ? 180 : 20;
 					for (let offset = 0; offset <= MAX_OFFSET; offset += 20) {
 						try {
 							const url = `${GAMMA_API_BASE}/events?series_id=${seriesId}&closed=false&limit=20&offset=${offset}`;
@@ -1307,9 +1391,16 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 			}
 
 			if (seriesMarkets.length > 0) {
+				// Extract YYYY-MM-DD from event slug (e.g. lol-jdg-blg-2026-03-04 → "2026-03-04")
+				// so we can prefer the most recent event when multiple same-team matchups exist.
+				const slugDate = (m: Market): string =>
+					m.eventSlug?.match(/(\d{4}-\d{2}-\d{2})$/)?.[1] ?? '0000-00-00';
 				seriesMarkets.sort((a, b) => {
 					const rank = (s: Market['status']): number => s === 'active' ? 0 : s === 'paused' ? 1 : 2;
-					return rank(a.status) - rank(b.status);
+					const statusDiff = rank(a.status) - rank(b.status);
+					if (statusDiff !== 0) return statusDiff;
+					// Tiebreaker: most recent event first (so today's live match beats Feb 28)
+					return slugDate(b).localeCompare(slugDate(a));
 				});
 				console.log(`[search] Series search found ${seriesMarkets.length} markets for "${query}"`);
 				return seriesMarkets;
@@ -1491,7 +1582,7 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 		const textQueryKeywords = cleanedQuery
 			.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/)
 			.filter(w => w.length >= 3 && /[a-z]/.test(w) &&
-				!new Set(['the','for','will','who','what','and','market','about','this','that']).has(w));
+				!new Set(['the', 'for', 'will', 'who', 'what', 'and', 'market', 'about', 'this', 'that']).has(w));
 		if (textQueryKeywords.length > 0) {
 			try {
 				const url = `${GAMMA_API_BASE}/events?closed=false&limit=5&text_query=${encodeURIComponent(cleanedQuery)}`;
@@ -2076,7 +2167,7 @@ function buildEventSlugCandidates(query: string): string[] {
  * Returns null if the response is malformed or missing required fields.
  */
 function mapGammaMarketToMarket(raw: GammaMarketResponse): Market | null {
-	const id = raw.id ?? raw.condition_id;
+	const id = raw.conditionId ?? raw.condition_id ?? raw.id;
 	const question = raw.question ?? raw.title;
 	if (!id || !question) {
 		return null;

@@ -10,11 +10,9 @@ const READ_SYSTEM_PROMPT = [
 	'You are given factual market data as context — use it when relevant.',
 	'Be concise, accurate, and conversational. Keep responses under 300 words.',
 	'You have NO ability to execute trades, access wallets, or modify anything.',
-	'If the user asks you to place a trade or wants to bet, tell them the EXACT trade command format to use:',
-	'  • "bet $[amount] on [market] [YES/NO/UP/DOWN]" — e.g. "bet $1 on Bitcoin Up or Down UP"',
-	'  • "buy $[amount] [market] [yes/no]" — e.g. "buy $5 Bitcoin up or down yes"',
-	'  • "place $[amount] on [market] [outcome]"',
-	'Tell them: action verb + dollar amount + market name + outcome = a trade.',
+	'If the user asks you to place a trade or wants to bet, tell them the command format:',
+	'  • \"bet $[amount] on [market name] [outcome]\" — where outcome is the market\'s actual label (e.g. YES/NO, UP/DOWN, OKC/NYK, Thunder/Knicks).',
+	'IMPORTANT: For sports matchups, the outcomes are the team names or abbreviations, NOT yes/no. Show the actual team names from the market data as the outcome options.',
 	'Never fabricate market data.',
 	'IMPORTANT: For sports/esports queries (teams, players, matches), the search returns the top active markets from that league or sport.',
 	'RULE: If sample markets are provided (even just 1), you MUST present them clearly as what is available. NEVER say "could not find" or "could not find" when markets are shown - that is confusing and wrong.',
@@ -121,9 +119,13 @@ function fallbackExplainer(input: ReadExplainerInput): string {
 function buildOlympusLinks(input: ReadExplainerInput): string {
 	const links: string[] = [];
 	for (const summary of input.sampleMarketSummaries) {
-		if (summary.slug) {
+		// Prefer the parent event slug (e.g. lol-jdg-blg-2026-03-04) — that is the
+		// correct Olympus URL path. The market-level slug is an internal Gamma ID
+		// that does not match the Olympus/Polymarket URL.
+		const linkSlug = summary.eventSlug ?? summary.slug;
+		if (linkSlug) {
 			// Use angle brackets to suppress Discord embeds
-			links.push(`<https://olympusx.app/app/market/${summary.slug}>`);
+			links.push(`<https://olympusx.app/app/market/${linkSlug}>`);
 		}
 	}
 	return links.length > 0 ? `View on Olympus:\n${links.join('\n')}` : '';

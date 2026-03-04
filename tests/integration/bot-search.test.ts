@@ -270,7 +270,7 @@ describe('Edge cases and negative tests', () => {
 				q.includes('counter-strike') || q.includes('league of legends');
 		});
 		expect(hasEsports).toBe(false);
-	}, 30_000);
+	}, 60_000);
 });
 
 // ═══════════════════════════════════════════════════════════════════

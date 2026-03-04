@@ -147,7 +147,7 @@ client.on('messageCreate', async (message) => {
 
     // Trade confirmation — send embed with Confirm / Cancel buttons
     const actionEmoji = result.action === 'BUY' ? '🟢' : '🔴';
-    const outcomeLabel = result.outcome === 'YES' ? 'UP / YES' : 'DOWN / NO';
+    const outcomeLabel = result.outcome === 'YES' ? (result.outcomeLabel ?? 'YES') : (result.outcomeLabel ?? 'NO');
     const embed = new EmbedBuilder()
       .setColor(result.action === 'BUY' ? 0x00c853 : 0xd50000)
       .setTitle(`${actionEmoji} Confirm ${result.action} Order`)

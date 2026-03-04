@@ -227,7 +227,9 @@ class ClobPolymarketExecutionGateway implements PolymarketExecutionGateway {
     const tickSize = await this.clobClient.getTickSize(tokenId);
     console.log(`⏱️  Tick size for token ${tokenId.substring(0, 12)}...: ${tickSize}`);
 
-    // 3. Amount in dollars (CLOB expects dollars for BUY, shares for SELL)
+    // 3. Amount handling
+    //    - BUY: CLOB expects dollar amount (USDC to spend)
+    //    - SELL: CLOB expects share count (outcome tokens to sell)
     const amountDollars = params.amountCents / 100;
     if (amountDollars < 1) {
       throw { code: 'INVALID_AMOUNT', message: 'Polymarket minimum order size is $1' };
@@ -235,9 +237,30 @@ class ClobPolymarketExecutionGateway implements PolymarketExecutionGateway {
 
     const side = params.action === 'SELL' ? Side.SELL : Side.BUY;
 
+    // For SELL orders, convert dollar amount → share count using current market price
+    let orderAmount = amountDollars;
+    if (params.action === 'SELL') {
+      try {
+        const book = await this.clobClient.getOrderBook(tokenId);
+        const bids = (book as unknown as { bids?: Array<{ price: string }> }).bids;
+        const bestBid = bids && bids.length > 0 ? parseFloat(bids[0].price) : 0;
+        if (bestBid > 0) {
+          // User wants to receive ~$X, so sell ($X / price) shares
+          orderAmount = Math.floor((amountDollars / bestBid) * 100) / 100;
+          console.log(
+            `🔄 SELL conversion: $${amountDollars} ÷ ${bestBid} (best bid) = ${orderAmount} shares`,
+          );
+        } else {
+          console.warn('⚠️ No bids found in order book, using raw amount as share count');
+        }
+      } catch (err) {
+        console.warn('⚠️ Could not fetch order book for sell conversion, using raw amount:', err);
+      }
+    }
+
     // 4. Place the market order via CLOB
     console.log(
-      `📤 Placing market order: ${side} ${params.outcome} $${amountDollars} on ${conditionId} (token ${tokenId.substring(0, 12)}... tickSize=${tickSize})`,
+      `📤 Placing market order: ${side} ${params.outcome} ${params.action === 'SELL' ? `${orderAmount} shares (~$${amountDollars})` : `$${amountDollars}`} on ${conditionId} (token ${tokenId.substring(0, 12)}... tickSize=${tickSize})`,
     );
 
     let result: unknown;
@@ -245,7 +268,7 @@ class ClobPolymarketExecutionGateway implements PolymarketExecutionGateway {
       result = await this.clobClient.createAndPostMarketOrder(
         {
           tokenID: tokenId,
-          amount: amountDollars,
+          amount: orderAmount,
           side,
         },
         { tickSize },

@@ -29,6 +29,7 @@ export type RouteResult =
 		readonly confirmId: string;
 		readonly marketQuestion: string;
 		readonly outcome: 'YES' | 'NO';
+		readonly outcomeLabel?: string;
 		readonly action: TradeAction;
 		readonly amountDollars: string;
 	};
@@ -419,6 +420,7 @@ export class DiscordMessageRouter {
 			return formatTradeResultMessage(tradeResult, {
 				marketQuestion: effectiveMarket.question,
 				outcome: effectiveIntent.outcome,
+				outcomeLabel: (effectiveMarket.outcomes as string[])[effectiveIntent.outcome === 'YES' ? 0 : 1],
 				action: actionForSpend,
 				amountCents: amountCentsNum,
 			});
@@ -429,6 +431,7 @@ export class DiscordMessageRouter {
 			confirmId,
 			marketQuestion: effectiveMarket.question,
 			outcome: effectiveIntent.outcome,
+			outcomeLabel: (effectiveMarket.outcomes as string[])[effectiveIntent.outcome === 'YES' ? 0 : 1] ?? effectiveIntent.outcome,
 			action: actionForSpend,
 			amountDollars: (amountCentsNum / 100).toFixed(2),
 		};
@@ -484,11 +487,15 @@ export class DiscordMessageRouter {
 		const lastDir = directionMatches.length > 0 ? directionMatches[directionMatches.length - 1][1] : null;
 		const outcome: 'YES' | 'NO' | null =
 			lastDir && /^(up|yes|long)$/.test(lastDir) ? 'YES' :
-			lastDir && /^(down|no|short)$/.test(lastDir) ? 'NO' :
-			null;
+				lastDir && /^(down|no|short)$/.test(lastDir) ? 'NO' :
+					null;
 
 		const isMarketInCommand = /\bmarket\s+in\b/i.test(message);
-		if (!amountMatch || (!outcome && !isMarketInCommand) || !/\b(bet|buy|sell|trade|market|exit|close)\b/.test(normalized)) {
+		const hasBetVerb = /\b(bet|buy|sell|trade|exit|close)\b/.test(normalized);
+		// Allow proceeding without a standard direction word (yes/no/up/down) when a bet verb
+		// is present — the outcome can be resolved later via fuzzy matching against market
+		// outcome labels (e.g., "Thunder", "OKC" for sports markets).
+		if (!amountMatch || (!outcome && !isMarketInCommand && !hasBetVerb) || !/\b(bet|buy|sell|trade|market|exit|close)\b/.test(normalized)) {
 			return null;
 		}
 
@@ -586,8 +593,48 @@ export class DiscordMessageRouter {
 		if (!selectedMarket) {
 			return { type: 'text', content: 'I could not find an active matching market right now. Please specify the market ID.' };
 		}
+
+		// If outcome still unresolved (no yes/no/up/down word found), fuzzy-match
+		// the trailing word(s) against the market's actual outcome labels.
+		// This handles sports markets where outcomes are team names (e.g., "OKC", "NYK",
+		// "Thunder", "Knicks") instead of YES/NO.
+		if (!resolvedOutcome && selectedMarket) {
+			const outcomeLabels = (selectedMarket.outcomes as string[]).map((o: string) => o.toLowerCase());
+			// Extract the last word(s) after stripping amount/action as a potential outcome label
+			const trailingMatch = normalized.match(/\b([a-z0-9][\w\s\-]*?)\s*$/);
+			let trailingLabel = trailingMatch?.[1]?.trim() ?? '';
+
+			// Map common sports abbreviations to full team names
+			const TEAM_ABBR_MAP: Record<string, string> = {
+				// NBA
+				okc: 'thunder', nyk: 'knicks', lal: 'lakers', bos: 'celtics',
+				gsw: 'warriors', mil: 'bucks', bkn: 'nets', lac: 'clippers',
+				den: 'nuggets', mia: 'heat', chi: 'bulls', phx: 'suns',
+				sas: 'spurs', det: 'pistons', tor: 'raptors', atl: 'hawks',
+				por: 'blazers', ind: 'pacers', cle: 'cavaliers', was: 'wizards',
+				nop: 'pelicans', uta: 'jazz', sac: 'kings', mem: 'grizzlies',
+				hou: 'rockets', orl: 'magic', cha: 'hornets', phi: '76ers',
+				dal: 'mavericks', min: 'timberwolves',
+				// NFL
+				kc: 'chiefs', buf: 'bills', sf: 'niners', bal: 'ravens',
+				// More can be added as needed
+			};
+			const expanded = TEAM_ABBR_MAP[trailingLabel];
+			if (expanded) trailingLabel = expanded;
+
+			if (trailingLabel) {
+				const matchIdx = outcomeLabels.findIndex(
+					(o: string) => o.includes(trailingLabel) || trailingLabel.includes(o),
+				);
+				if (matchIdx === 0) resolvedOutcome = 'YES';
+				else if (matchIdx >= 1) resolvedOutcome = 'NO';
+			}
+		}
+
 		if (!resolvedOutcome) {
-			return { type: 'text', content: 'I could not determine the outcome to bet on. Try ending with "on yes" or "on no".' };
+			// Show the actual outcome labels from the market so the user knows what to type
+			const labels = (selectedMarket.outcomes as string[]).join(' / ');
+			return { type: 'text', content: `I could not determine which outcome you want. Try ending with one of: **${labels}**` };
 		}
 		const pseudoIntent = {
 			intent: 'place_bet' as const,
@@ -653,6 +700,7 @@ export class DiscordMessageRouter {
 			return formatTradeResultMessage(tradeResult, {
 				marketQuestion: selectedMarket.question,
 				outcome: pseudoIntent.outcome,
+				outcomeLabel: (selectedMarket.outcomes as string[])[pseudoIntent.outcome === 'YES' ? 0 : 1],
 				action: pseudoIntent.action,
 				amountCents: amountCentsNum,
 			});
@@ -663,6 +711,7 @@ export class DiscordMessageRouter {
 			confirmId,
 			marketQuestion: selectedMarket.question,
 			outcome: pseudoIntent.outcome,
+			outcomeLabel: (selectedMarket.outcomes as string[])[pseudoIntent.outcome === 'YES' ? 0 : 1] ?? pseudoIntent.outcome,
 			action: pseudoIntent.action,
 			amountDollars: (amountCentsNum / 100).toFixed(2),
 		};
@@ -671,11 +720,12 @@ export class DiscordMessageRouter {
 
 function formatTradeResultMessage(
 	result: import('../types').TradeResult,
-	context: { marketQuestion: string; outcome: 'YES' | 'NO'; action: TradeAction; amountCents: number },
+	context: { marketQuestion: string; outcome: 'YES' | 'NO'; outcomeLabel?: string; action: TradeAction; amountCents: number },
 ): string {
 	const amountDollars = (context.amountCents / 100).toFixed(2);
 	const actionLabel = context.action === 'SELL' ? 'Sold' : 'Bought';
 	const actionVerb = context.action === 'SELL' ? 'SELL' : 'BUY';
+	const sideLabel = context.outcomeLabel ?? context.outcome;
 	if (result.ok) {
 		const isTxHash = result.tradeId.startsWith('0x');
 		const tradeIdLine = isTxHash
@@ -685,7 +735,7 @@ function formatTradeResultMessage(
 			`✅ **${actionLabel}!**`,
 			`• Market: **${context.marketQuestion}**`,
 			`• Action: **${actionVerb}**`,
-			`• Side: **${context.outcome}**`,
+			`• Side: **${sideLabel}**`,
 			`• Amount: **$${amountDollars}**`,
 			tradeIdLine,
 			`• Time: ${new Date(result.executedAtMs).toUTCString()}`,
@@ -1104,6 +1154,22 @@ function summarizeUpToThree(
 					m.question.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().includes(kw)
 				)
 			);
+		}
+	}
+	// Extract date from event slug for recency checks (e.g. lol-jdg-blg-2026-03-04 → "2026-03-04")
+	const getSlugDate = (m: MarketSummary): string =>
+		m.eventSlug?.match(/(\d{4}-\d{2}-\d{2})$/)?.[1] ?? '0000-00-00';
+	const today = new Date().toISOString().slice(0, 10);
+
+	// If the best active non-prop is from a stale event (>3 days ago) but there is a
+	// more recent active market (even if it's a "prop" like Game 4), prefer the recent one.
+	if (bestActive) {
+		const bestDate = getSlugDate(bestActive);
+		if (bestDate < today) {
+			const moreRecent = validSummaries.find(m =>
+				m.status === 'active' && m !== bestActive && getSlugDate(m) >= today
+			);
+			if (moreRecent) bestActive = moreRecent;
 		}
 	}
 	// Fall back to first active non-prop in search order (search already ranked by relevance)
