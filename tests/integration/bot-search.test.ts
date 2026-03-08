@@ -185,6 +185,43 @@ describe('Sports matchup queries (vs-queries)', () => {
 			expect(isCorrect).toBe(true);
 		}
 	}, 30_000);
+
+	it('"Maple Leafs vs Bruins" finds the NHL game, NOT AHL or Stanley Cup futures', async () => {
+		const results = await readService.searchMarketsByText('Toronto Maple Leafs vs Boston Bruins');
+		console.log(`  Maple Leafs vs Bruins: ${results.length} results`);
+		if (results.length > 0) {
+			console.log(`    top: "${results[0].question}"`);
+			const top = results[0].question.toLowerCase();
+			// Should contain actual team names, not a generic "Stanley Cup" futures market
+			const isCorrect = top.includes('maple leafs') || top.includes('bruins') || top.includes('tor') || top.includes('bos');
+			expect(isCorrect).toBe(true);
+		}
+	}, 30_000);
+
+	it('"Providence Bruins vs Bridgeport Islanders" finds the AHL game, NOT NHL Stanley Cup', async () => {
+		const results = await readService.searchMarketsByText('tell me Providence Bruins vs Bridgeport Islanders');
+		console.log(`  Providence Bruins vs Bridgeport Islanders: ${results.length} results`);
+		if (results.length > 0) {
+			console.log(`    top: "${results[0].question}"`);
+			const top = results[0].question.toLowerCase();
+			const isCorrect = top.includes('providence') || top.includes('bridgeport');
+			expect(isCorrect).toBe(true);
+			// Must NOT return NHL Stanley Cup as top result
+			const isStanleyCup = top.includes('stanley cup');
+			expect(isStanleyCup).toBe(false);
+		}
+	}, 30_000);
+
+	it('"Arsenal vs Chelsea" finds the EPL game', async () => {
+		const results = await readService.searchMarketsByText('Arsenal vs Chelsea');
+		console.log(`  Arsenal vs Chelsea: ${results.length} results`);
+		if (results.length > 0) {
+			console.log(`    top: "${results[0].question}"`);
+			const top = results[0].question.toLowerCase();
+			const isCorrect = top.includes('arsenal') || top.includes('chelsea') || top.includes('ars') || top.includes('che');
+			expect(isCorrect).toBe(true);
+		}
+	}, 30_000);
 });
 
 // ═══════════════════════════════════════════════════════════════════

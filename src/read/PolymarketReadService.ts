@@ -15,6 +15,8 @@ export interface PolymarketReadProvider {
 	getMarket(marketId: MarketId): Promise<Market | null>;
 	/** Returns markets that match free-text query semantics from the provider. */
 	searchMarkets(query: string): Promise<readonly Market[]>;
+	/** Fetches live, uncached prices for a single market. Optional. */
+	refreshMarketPrices?(market: Market): Promise<Market>;
 }
 
 /**
@@ -51,7 +53,7 @@ export interface MarketSummary {
  * - It avoids Discord/user identity assumptions and has no side effects.
  */
 export class PolymarketReadService {
-	public constructor(private readonly provider: PolymarketReadProvider) {}
+	public constructor(private readonly provider: PolymarketReadProvider) { }
 
 	/**
 	 * Lists live markets only.
@@ -74,6 +76,17 @@ export class PolymarketReadService {
 	 */
 	public async searchMarketsByText(query: string): Promise<readonly Market[]> {
 		return this.provider.searchMarkets(query);
+	}
+
+	/**
+	 * Fetches live prices for a market, bypassing cache.
+	 * Falls back to returning the market unchanged if provider doesn't support it.
+	 */
+	public async refreshMarketPrices(market: Market): Promise<Market> {
+		if (this.provider.refreshMarketPrices) {
+			return this.provider.refreshMarketPrices(market);
+		}
+		return market;
 	}
 
 	/**

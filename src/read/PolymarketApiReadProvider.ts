@@ -111,14 +111,35 @@ const SPORT_ALIASES: Record<string, string[]> = {
 		'chicago sky', 'atlanta dream', 'minnesota lynx', 'phoenix mercury'],
 	nfl: ['nfl', 'football', 'super bowl', 'superbowl', 'patriots', 'chiefs', 'eagles', 'nfl draft', 'draft pick', 'first overall pick'],
 	mlb: ['mlb', 'baseball', 'world series', 'yankees', 'dodgers', 'mets'],
-	nhl: ['nhl', 'hockey', 'stanley cup'],
+	nhl: ['nhl', 'hockey', 'stanley cup',
+		// NHL team names — all 32 teams
+		'boston bruins', 'buffalo sabres', 'detroit red wings', 'florida panthers',
+		'montreal canadiens', 'canadiens', 'habs', 'ottawa senators', 'tampa bay lightning',
+		'toronto maple leafs', 'maple leafs', 'carolina hurricanes', 'columbus blue jackets',
+		'new jersey devils', 'new york islanders', 'new york rangers', 'philadelphia flyers',
+		'pittsburgh penguins', 'washington capitals', 'arizona coyotes', 'chicago blackhawks',
+		'colorado avalanche', 'avalanche', 'dallas stars', 'minnesota wild', 'nashville predators',
+		'st louis blues', 'winnipeg jets', 'anaheim ducks', 'calgary flames',
+		'edmonton oilers', 'oilers', 'los angeles kings', 'san jose sharks',
+		'seattle kraken', 'vancouver canucks', 'vegas golden knights', 'golden knights',
+		'utah hockey club'],
 	// Hockey variants
 	khl: ['khl', 'kontinental hockey', 'russian hockey', 'kontinental league'],
 	shl: ['shl', 'swedish hockey league', 'sweden hockey'],
 	cehl: ['czech extraliga', 'czech hockey', 'cehl'],
 	dehl: ['del', 'deutsche eishockey liga', 'german hockey', 'dehl'],
 	snhl: ['national league hockey', 'swiss hockey', 'snhl', 'nl hockey switzerland'],
-	ahl: ['ahl', 'american hockey league', 'ahl hockey'],
+	ahl: ['ahl', 'american hockey league', 'ahl hockey',
+		// AHL team names — enables detection from team-based queries like "Providence Bruins vs Bridgeport Islanders"
+		'providence bruins', 'bridgeport islanders', 'hershey bears', 'hartford wolf pack',
+		'charlotte checkers', 'lehigh valley phantoms', 'springfield thunderbirds',
+		'syracuse crunch', 'utica comets', 'belleville senators', 'rochester americans',
+		'toronto marlies', 'manitoba moose', 'cleveland monsters', 'wilkes-barre scranton penguins',
+		'texas stars', 'chicago wolves', 'rockford icehogs', 'grand rapids griffins',
+		'milwaukee admirals', 'iowa wild', 'san jose barracuda', 'san diego gulls',
+		'tucson roadrunners', 'bakersfield condors', 'colorado eagles', 'abbotsford canucks',
+		'ontario reign', 'henderson silver knights', 'coachella valley firebirds',
+		'calgary wranglers', 'laval rocket', 'manitoba moose'],
 	hok: ['field hockey', 'field hockey championship'],
 	epl: ['premier league', 'epl',
 		// Big 6 + common full/short names
@@ -506,6 +527,28 @@ const QUERY_SYNONYMS: Record<string, string> = {
 	mlk: 'martin luther king',
 };
 
+/**
+ * Shared stopwords used across the entire search pipeline.
+ * Conservative: only truly universal conversational/structural noise.
+ * Domain-specific terms like 'game', 'match', 'win', 'score' are NOT here
+ * because they're meaningful in sports/esports queries.
+ */
+const COMMON_STOPWORDS = new Set([
+	// Articles / prepositions / conjunctions
+	'the', 'a', 'an', 'of', 'for', 'in', 'on', 'at', 'to', 'is', 'are', 'be',
+	'and', 'or', 'vs', 'versus',
+	// Conversational filler
+	'hi', 'hey', 'hello', 'can', 'you', 'me', 'please', 'show', 'tell',
+	'about', 'check', 'find', 'get', 'give', 'see', 'looking',
+	// Question words
+	'who', 'what', 'whats', 'how', 'which', 'will', 'do', 'does', 'did',
+	'has', 'have', 'been', 'would', 'should', 'could',
+	// Generic request words
+	'market', 'markets', 'odds', 'status', 'update', 'updates',
+	'current', 'live', 'going', 'this', 'that', 'it', 'its', 'any',
+	'right', 'now',
+]);
+
 /** Expand known abbreviations/nicknames in a query string (whole-word, case-insensitive). */
 function expandSynonyms(query: string): string {
 	let result = query;
@@ -569,8 +612,42 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 				console.log(`[listMarkets] Fetched ${all.length} active markets from API`);
 				return all;
 			},
-			300, // 5 minute TTL
+			60, // 1 minute TTL — fresher prices, especially for live sports
 		);
+	}
+
+	/**
+	 * Fetches live prices for a single market directly from the Gamma API (uncached).
+	 * Used to refresh stale cached prices before showing them to the user.
+	 * Returns updated outcomePrices or null if the fetch fails.
+	 */
+	public async refreshMarketPrices(market: Market): Promise<Market> {
+		try {
+			// Use slug-based single-market endpoint — the /markets?condition_id= query
+			// param is non-functional (Gamma API ignores it and returns all markets from
+			// page 1, causing stale [0,0] prices from old markets to overwrite valid data).
+			if (!market.slug) return market; // slug required for lookup
+			const url = `${GAMMA_API_BASE}/markets/${encodeURIComponent(market.slug)}`;
+			const response = await fetch(url);
+			if (!response.ok) return market;
+
+			const raw = (await response.json()) as GammaMarketResponse;
+			// Sanity check: make sure the returned market matches what we asked for
+			const returnedId = raw.conditionId ?? raw.condition_id;
+			if (returnedId && returnedId !== market.id) {
+				console.warn(`[refresh] conditionId mismatch for slug "${market.slug}": expected ${market.id}, got ${returnedId}`);
+				return market;
+			}
+
+			const freshPrices = parseOutcomePrices(raw.outcomePrices, market.outcomes.length);
+			if (freshPrices.length > 0) {
+				console.log(`[refresh] Prices updated for "${market.question}": ${market.outcomePrices} → ${freshPrices}`);
+				return { ...market, outcomePrices: freshPrices };
+			}
+		} catch (err) {
+			console.warn('[refresh] Failed to fetch live prices:', err);
+		}
+		return market;
 	}
 
 	/**
@@ -602,6 +679,57 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 		}
 
 		console.log(`[search] Raw query: "${normalized}"`);
+
+		// ──────────────────────────────────────────────────────────────────────
+		// 0. DIRECT LOOKUP — Polymarket URL or condition ID in the query
+		// ──────────────────────────────────────────────────────────────────────
+		// Match polymarket.com/event/<event-slug> or polymarket.com/event/<event-slug>/<market-slug>
+		const urlMatch = normalized.match(/polymarket\.com\/event\/([a-z0-9-]+)/i);
+		if (urlMatch) {
+			const eventSlug = urlMatch[1];
+			console.log(`[search] Polymarket URL detected, event slug: "${eventSlug}"`);
+			try {
+				const eventUrl = `${GAMMA_API_BASE}/events?closed=false&limit=1&slug=${encodeURIComponent(eventSlug)}`;
+				const resp = await fetch(eventUrl);
+				if (resp.ok) {
+					const events = await resp.json();
+					if (Array.isArray(events) && events.length > 0 && Array.isArray(events[0].markets)) {
+						const markets = events[0].markets
+							.map(mapGammaMarketToMarket)
+							.filter((m: Market | null): m is Market => m !== null);
+						if (markets.length > 0) {
+							console.log(`[search] Direct URL hit: ${markets.length} markets`);
+							return markets;
+						}
+					}
+				}
+				// Also try closed events
+				const closedUrl = `${GAMMA_API_BASE}/events?closed=true&limit=1&slug=${encodeURIComponent(eventSlug)}`;
+				const closedResp = await fetch(closedUrl);
+				if (closedResp.ok) {
+					const closedEvents = await closedResp.json();
+					if (Array.isArray(closedEvents) && closedEvents.length > 0 && Array.isArray(closedEvents[0].markets)) {
+						const markets = closedEvents[0].markets
+							.map(mapGammaMarketToMarket)
+							.filter((m: Market | null): m is Market => m !== null);
+						if (markets.length > 0) return markets;
+					}
+				}
+			} catch {
+				// best-effort; fall through to normal search
+			}
+		}
+		// Match condition IDs (0x-prefixed hex, 66 chars)
+		const conditionIdMatch = normalized.match(/\b(0x[a-fA-F0-9]{64})\b/);
+		if (conditionIdMatch) {
+			const conditionId = conditionIdMatch[1];
+			console.log(`[search] Condition ID detected: "${conditionId}"`);
+			const direct = await this.getMarket(conditionId as MarketId);
+			if (direct) {
+				console.log(`[search] Direct condition ID hit: "${direct.question}"`);
+				return [direct];
+			}
+		}
 		// Normalize accented chars to ASCII (e.g. "Rodríguez" → "Rodriguez") so they
 		// don't get split into fragments like "rodr" + "guez" by the ASCII-only regex.
 		const asciiQuery = normalized.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -706,13 +834,23 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 			}
 		}
 
+		// If player override found results, score and return them
+		if (eventMarkets.length > 0) {
+			return this.scoreAndSortEventMarkets(eventMarkets, searchTerms);
+		}
+
+		// ──────────────────────────────────────────────────────────────────────
+		// PARALLEL SEARCH: Run slug candidates + events text_query concurrently
+		// then merge results for best coverage.
+		// ──────────────────────────────────────────────────────────────────────
+		const cleanedKeywords = cleanSearchKeywords(searchTerms);
+
 		// Build slug candidate list: AI predictions first (more likely correct),
 		// then mechanical permutations as fallback.
 		const mechanicalCandidates = buildEventSlugCandidates(searchTerms);
 		const aiNormalized = aiSlugPredictions.map(s =>
 			s.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-+|-+$/g, ''),
 		).filter(s => s.length >= 5);
-		// Deduplicate, preserving AI predictions first
 		const seenSlugs = new Set<string>();
 		const eventSlugCandidates: string[] = [];
 		for (const s of [...aiNormalized, ...mechanicalCandidates]) {
@@ -720,82 +858,55 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 		}
 		console.log(`[search] Event slug candidates (${eventSlugCandidates.length}):`, eventSlugCandidates.slice(0, 6));
 
-		// Check slug candidates in parallel batches of 6 (faster than sequential)
-		const SLUG_BATCH = 6;
-		const eventScopes = ['closed=false', 'closed=true'];
-		for (const scope of eventScopes) {
-			if (eventMarkets.length > 0) break;
-			for (let i = 0; i < eventSlugCandidates.length && eventMarkets.length === 0; i += SLUG_BATCH) {
-				const batch = eventSlugCandidates.slice(i, i + SLUG_BATCH);
-				const batchResults = await Promise.all(batch.map(async slug => {
-					try {
-						const eventUrl = `${GAMMA_API_BASE}/events?${scope}&limit=1&slug=${encodeURIComponent(slug)}`;
-						const eventResp = await fetch(eventUrl);
-						if (!eventResp.ok) return null;
-						const events = await eventResp.json();
-						if (Array.isArray(events) && events.length > 0 && Array.isArray(events[0].markets) && events[0].markets.length > 0) {
-							return { slug, event: events[0] };
+		// Strategy A: Slug-based event search (parallel batches)
+		const slugSearchPromise = (async (): Promise<Market[]> => {
+			const SLUG_BATCH = 6;
+			for (const scope of ['closed=false', 'closed=true']) {
+				for (let i = 0; i < eventSlugCandidates.length; i += SLUG_BATCH) {
+					const batch = eventSlugCandidates.slice(i, i + SLUG_BATCH);
+					const batchResults = await Promise.all(batch.map(async slug => {
+						try {
+							const eventUrl = `${GAMMA_API_BASE}/events?${scope}&limit=1&slug=${encodeURIComponent(slug)}`;
+							const eventResp = await fetch(eventUrl);
+							if (!eventResp.ok) return null;
+							const events = await eventResp.json();
+							if (Array.isArray(events) && events.length > 0 && Array.isArray(events[0].markets) && events[0].markets.length > 0) {
+								return { slug, event: events[0] };
+							}
+						} catch { /* best-effort */ }
+						return null;
+					}));
+					for (const result of batchResults) {
+						if (result) {
+							console.log(`[search] Slug hit! slug="${result.slug}" title="${result.event.title}" markets=${result.event.markets.length}`);
+							return result.event.markets
+								.map(mapGammaMarketToMarket)
+								.filter((m: Market | null): m is Market => m !== null);
 						}
-					} catch { /* best-effort */ }
-					return null;
-				}));
-				// Take the first hit from this batch (order matters — AI predictions first)
-				for (const result of batchResults) {
-					if (result) {
-						console.log(`[search] Event hit! slug="${result.slug}" title="${result.event.title}" markets=${result.event.markets.length}`);
-						eventMarkets = result.event.markets
-							.map(mapGammaMarketToMarket)
-							.filter((m: Market | null): m is Market => m !== null);
-						break;
 					}
 				}
 			}
+			return [];
+		})();
+
+		// Strategy B: Events text_query search (Gamma's full-text search — primary strategy)
+		const textQueryPromise = this.searchEventsByText(cleanedKeywords);
+
+		// Run both strategies in parallel
+		const [slugMarkets, textQueryMarkets] = await Promise.all([slugSearchPromise, textQueryPromise]);
+		console.log(`[search] Parallel results: slug=${slugMarkets.length}, text_query=${textQueryMarkets.length}`);
+
+		// Merge and deduplicate — slug results first (higher precision), then text_query
+		const mergedDeduped = new Map<string, Market>();
+		for (const m of [...slugMarkets, ...textQueryMarkets]) {
+			if (!mergedDeduped.has(m.id)) {
+				mergedDeduped.set(m.id, m);
+			}
 		}
 
-		// If event search found results, return them directly.
-		// When an event has many markets (e.g. 128 candidates in "2028 Democratic Nominee"),
-		// score each market by how many query keywords appear in its question so that
-		// the specific entity the user asked about (e.g. "Gavin Newsom") floats to the top.
-		if (eventMarkets.length > 0) {
-			// Build a keyword set from the searchTerms for relevance scoring.
-			// Use the same stopwords as the series search to avoid matching noise.
-			// Only strip true conversational/structural noise — do NOT stop-word
-			// political terms or years, since those may distinguish events.
-			// Names like "Gavin Newsom", "Bernie Sanders" must pass through intact.
-			const SCORE_STOPWORDS = new Set([
-				'the', 'a', 'an', 'of', 'for', 'in', 'on', 'at', 'to', 'is', 'are', 'be',
-				'will', 'who', 'what', 'how', 'which', 'and', 'or', 'vs', 'versus',
-				'market', 'odds', 'about', 'show', 'tell', 'me', 'please', 'check',
-				'hi', 'hey', 'can', 'you', 'give', 'find', 'get', 'status', 'update',
-			]);
-			const scoreKeywords = searchTerms
-				.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/)
-				.filter(w => w.length >= 2 && !SCORE_STOPWORDS.has(w));
-
-			// Build the phrase for phrase-match bonus (first 4 keywords joined)
-			const scorePhrase = scoreKeywords.slice(0, 4).join(' ');
-
-			const scoreMarket = (m: Market): number => {
-				if (scoreKeywords.length === 0) return 0;
-				const q = m.question.toLowerCase();
-				const keywordHits = scoreKeywords.filter(kw => q.includes(kw)).length;
-				// Phrase bonus: +2 if ≥2 consecutive keywords appear as a phrase in question
-				const phraseBonus = scorePhrase.length >= 5 && q.includes(scorePhrase) ? 2 : 0;
-				return keywordHits + phraseBonus;
-			};
-
-			eventMarkets.sort((a, b) => {
-				// Primary: status (active first)
-				const rankStatus = (s: Market['status']): number => s === 'active' ? 0 : s === 'paused' ? 1 : 2;
-				const statusDiff = rankStatus(a.status) - rankStatus(b.status);
-				if (statusDiff !== 0) return statusDiff;
-				// Secondary: keyword relevance score (higher = better match)
-				return scoreMarket(b) - scoreMarket(a);
-			});
-
-			const activeCount = eventMarkets.filter(m => m.status === 'active').length;
-			console.log(`[search] Event results: ${eventMarkets.length} total, ${activeCount} active. Top market: "${eventMarkets[0]?.question}"`);
-			return eventMarkets;
+		if (mergedDeduped.size > 0) {
+			const mergedMarkets = [...mergedDeduped.values()];
+			return this.scoreAndSortEventMarkets(mergedMarkets, searchTerms);
 		}
 
 		// ──────────────────────────────────────────────────────────────────────
@@ -823,89 +934,48 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 			}
 		}
 
-		// --- Fallback: Events text search ---
-		// Try searching events via tag/slug matching with cleaned keywords.
-		// This catches events like "Presidential Election Winner 2028" that the slug search missed.
-		const cleanedKeywords = cleanSearchKeywords(searchTerms);
-		console.log(`[search] Cleaned keywords for fallback: "${cleanedKeywords}"`);
-
-		const eventsTextResults = await this.searchEventsByText(cleanedKeywords);
-		if (eventsTextResults.length > 0) {
-			// Score and sort by keyword relevance (same logic as slug-matched events)
-			const SCORE_STOPWORDS = new Set([
-				'the', 'a', 'an', 'of', 'for', 'in', 'on', 'at', 'to', 'is', 'are', 'be',
-				'will', 'who', 'what', 'how', 'which', 'and', 'or', 'vs', 'versus',
-				'market', 'odds', 'about', 'show', 'tell', 'me', 'please', 'check',
-			]);
-			const kws = cleanedKeywords
-				.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/)
-				.filter(w => w.length >= 2 && !SCORE_STOPWORDS.has(w));
-			eventsTextResults.sort((a, b) => {
-				const rankStatus = (s: Market['status']): number => s === 'active' ? 0 : s === 'paused' ? 1 : 2;
-				const statusDiff = rankStatus(a.status) - rankStatus(b.status);
-				if (statusDiff !== 0) return statusDiff;
-				const aq = a.question.toLowerCase();
-				const bq = b.question.toLowerCase();
-				return kws.filter(kw => bq.includes(kw)).length - kws.filter(kw => aq.includes(kw)).length;
-			});
-			console.log(`[search] Events text search found ${eventsTextResults.length} markets, top: "${eventsTextResults[0]?.question}"`);
-			return eventsTextResults;
-		}
-
-		// --- Fallback: Markets slug, tag, and text_query searches ---
-		// Use cleaned keywords (not the raw query) so we don't pollute searches with noise
+		// --- Last-resort fallback: Markets slug, tag, and text_query searches ---
 		const searchSlug = cleanedKeywords.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-		let slugResults: Market[] = [];
-		let tagResults: Market[] = [];
-		let textResults: Market[] = [];
+		let mSlugResults: Market[] = [];
+		let mTagResults: Market[] = [];
+		let mTextResults: Market[] = [];
 		for (const scope of ['closed=false', 'closed=true']) {
 			const slugUrl = `${GAMMA_API_BASE}/markets?${scope}&limit=${DEFAULT_PAGE_LIMIT}&slug=${encodeURIComponent(searchSlug)}`;
-			slugResults = slugResults.concat(await this.fetchAndMapMarkets(slugUrl));
+			mSlugResults = mSlugResults.concat(await this.fetchAndMapMarkets(slugUrl));
 
 			const tagUrl = `${GAMMA_API_BASE}/markets?${scope}&limit=${DEFAULT_PAGE_LIMIT}&tag=${encodeURIComponent(cleanedKeywords)}`;
-			tagResults = tagResults.concat(await this.fetchAndMapMarkets(tagUrl));
+			mTagResults = mTagResults.concat(await this.fetchAndMapMarkets(tagUrl));
 
 			const textUrl = `${GAMMA_API_BASE}/markets?${scope}&limit=${DEFAULT_PAGE_LIMIT}&text_query=${encodeURIComponent(cleanedKeywords)}`;
-			textResults = textResults.concat(await this.fetchAndMapMarkets(textUrl));
+			mTextResults = mTextResults.concat(await this.fetchAndMapMarkets(textUrl));
 		}
 
-		// Merge and deduplicate by market id — use Map to preserve insertion order
+		// Merge and deduplicate by market id
 		const deduped = new Map<string, Market>();
-		for (const m of [...slugResults, ...tagResults, ...textResults]) {
+		for (const m of [...mSlugResults, ...mTagResults, ...mTextResults]) {
 			if (!deduped.has(m.id)) {
 				deduped.set(m.id, m);
 			}
 		}
 
 		// Relevance filter: only keep markets whose question contains at least one
-		// query keyword. Without this, the Gamma API's tag/text_query fallback
-		// returns hundreds of irrelevant markets.
+		// query keyword. Without this, the Gamma API returns hundreds of irrelevant markets.
 		const filterKeywords = cleanedKeywords
 			.toLowerCase().replace(/[^a-z0-9\s&]/g, ' ').split(/\s+/)
 			.filter(w => w.length >= 2);
-		const FILTER_STOPWORDS = new Set([
-			// Articles / prepositions / conjunctions
-			'the', 'a', 'an', 'of', 'for', 'in', 'on', 'at', 'to', 'is', 'are', 'be',
-			'will', 'who', 'what', 'whats', 'how', 'which', 'and', 'or', 'vs', 'versus',
-			// Generic filler words (from cleanSearchKeywords NOISE_WORDS)
-			'market', 'markets', 'about', 'show', 'tell', 'me', 'please', 'check',
-			'hi', 'hey', 'can', 'you', 'give', 'find', 'get', 'current', 'live',
-			'update', 'updates', 'going', 'this', 'that', 'it', 'its', 'do', 'does',
-			'did', 'has', 'have', 'been', 'would', 'should', 'could', 'any',
-			'right', 'now', 'today', 'tonight', 'latest', 'looking', 'see',
-			'bring', 'up', 'odds', 'chance', 'chances', 'probability',
-			// Sports / esports generic terms (not team/player names)
+		// Extended stopwords for the final fallback (includes domain-specific terms
+		// that are too generic to be useful as relevance signals in the market-level search)
+		const FALLBACK_EXTRA_STOPWORDS = new Set([
+			'today', 'tonight', 'latest', 'bring', 'up', 'chance', 'chances', 'probability',
 			'game', 'match', 'play', 'score', 'result', 'series', 'season',
 			'playoffs', 'league', 'tournament', 'cup', 'championship',
 			'sports', 'esports', 'regular', 'kickoff',
 		]);
-		const relevantKeywords = filterKeywords.filter(w => !FILTER_STOPWORDS.has(w));
+		const relevantKeywords = filterKeywords.filter(w => !COMMON_STOPWORDS.has(w) && !FALLBACK_EXTRA_STOPWORDS.has(w));
 		// Separate word-keywords from numeric-only tokens (years like "2026" appear in
 		// almost every market and must not be the SOLE relevance signal).
 		const wordKeywords = relevantKeywords.filter(w => /[a-z]/.test(w));
 		const numericKeywords = relevantKeywords.filter(w => !/[a-z]/.test(w));
-		// When there are real word-keywords, require at least one to match.
-		// Fall back to any keyword (including numeric) only when there are no words.
 		const mustMatchKeywords = wordKeywords.length > 0 ? wordKeywords : numericKeywords;
 
 		let filtered: Market[];
@@ -919,24 +989,17 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 			filtered = [...deduped.values()];
 		}
 
-		// Rank: active first, then by keyword-match score (desc), then by volume (desc).
-		// Using keyword score as secondary sort (after status) ensures that markets
-		// matching more query keywords (e.g. "Bitcoin Up or Down" for "bitcoin up or down")
-		// rank above high-volume markets matching only one keyword (e.g. "Will BTC hit $1M?").
-		const keywordScoreOf = (m: Market): number => {
-			const q = m.question.toLowerCase();
-			return relevantKeywords.filter(kw => q.includes(kw)).length;
-		};
+		// TF-IDF scoring: weight rare keywords higher than common ones
 		filtered.sort((a, b) => {
 			const rankStatus = (s: Market['status']): number => s === 'active' ? 0 : s === 'paused' ? 1 : 2;
 			const statusDiff = rankStatus(a.status) - rankStatus(b.status);
 			if (statusDiff !== 0) return statusDiff;
-			const scoreDiff = keywordScoreOf(b) - keywordScoreOf(a);
+			const scoreDiff = tfidfScore(b, relevantKeywords, filtered) - tfidfScore(a, relevantKeywords, filtered);
 			if (scoreDiff !== 0) return scoreDiff;
 			return Math.log10(Math.max(b.volume || 1, 1)) - Math.log10(Math.max(a.volume || 1, 1));
 		});
 		const results = filtered;
-		console.log(`[search] Results: slug=${slugResults.length} tag=${tagResults.length} text=${textResults.length} relevant=${results.length}`);
+		console.log(`[search] Results: slug=${mSlugResults.length} tag=${mTagResults.length} text=${mTextResults.length} relevant=${results.length}`);
 		return results;
 	}
 
@@ -1184,11 +1247,10 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 		}
 
 		// When a specific sport was detected, search only that sport's series.
-		// For unknown vs-queries (no sport detected), search a curated set covering
-		// every major sport — esports and top traditional leagues first.
-		// The early-exit (break on first match) keeps this fast for most queries.
-		// For truly obscure matchups with no match here, we correctly return 0 results.
-		const COMMON_SPORT_CODES = [
+		// For unknown vs-queries (no sport detected), search ALL sports from the
+		// /sports endpoint (dynamically). Priority sports are listed first for
+		// early-exit optimization (the loop breaks on first match).
+		const PRIORITY_SPORT_CODES = new Set([
 			// Esports — highest vs-query volume
 			'cs2', 'lol', 'dota2', 'val', 'mlbb', 'ow', 'codmw', 'rl', 'sc2', 'sc', 'pubg',
 			'lcs', 'lpl', 'r6siege', 'wildrift',
@@ -1205,25 +1267,49 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 			// Rugby
 			'ruprem', 'rutopft', 'rusixnat', 'ruurc', 'rusrp',
 			// Hockey
-			'khl', 'shl',
+			'khl', 'shl', 'ahl', 'cehl', 'dehl', 'snhl',
 			// Olympics / other
 			'mwoh', 'euroleague',
-		];
+		]);
+		// Build the full list: priority sports first, then any remaining from the
+		// live /sports endpoint so newly added sports are automatically covered.
+		const allApiCodes = sportsMeta.map(s => s.sport);
+		const remainingCodes = allApiCodes.filter(c => !PRIORITY_SPORT_CODES.has(c));
+		const COMMON_SPORT_CODES = [...PRIORITY_SPORT_CODES, ...remainingCodes];
 		const sportsToSearch = detectedSports.length > 0 ? detectedSports : COMMON_SPORT_CODES;
 
-		// --- Strategy 1: Series-specific search ---
-		// Extract meaningful keywords from the query (abbreviations, team names, etc.)
-		// Slugs use these abbreviations (e.g. "ktc", "drxc"), so matching against
-		// the event slug is far more reliable than matching against the full title.
-		const STOPWORDS = new Set([
-			// conversational words
-			'the', 'can', 'you', 'about', 'check', 'market', 'what', 'this', 'that', 'going',
-			'hi', 'hello', 'show', 'tell', 'find', 'get', 'me', 'please', 'will', 'win',
-			'who', 'which', 'how', 'is', 'are', 'and', 'or', 'for', 'in', 'of', 'a', 'an',
-			'vs', 'versus', 'status', 'live', 'current', 'update', 'updates', 'score', 'now', 'rn',
-			'do', 'does', 'did', 'has', 'have', 'been', 'would', 'should', 'could', 'any',
-			'today', 'tonight', 'right', 'currently', 'latest', 'looking', 'see',
-			'up', 'bring', 'odds', 'chance', 'chances', 'on', 'at', 'to', 'be',
+		// Fuzzy abbreviation matcher: checks if keyword is formed by concatenating
+		// leading characters from consecutive haystack words.
+		// e.g. "chsou" matches "charleston-southern" (ch + sou),
+		//      "winth" matches "winthrop" (winth prefix).
+		// Guards: keyword ≥3 chars, each word contributes ≥1 char.
+		const fuzzySlugMatch = (kw: string, haystack: string): boolean => {
+			if (kw.length < 3) return false;
+			const words = haystack.split(/[^a-z0-9]+/).filter(w => w.length > 0);
+			for (let startIdx = 0; startIdx < words.length; startIdx++) {
+				let kwPos = 0;
+				let wordsUsed = 0;
+				for (let wi = startIdx; wi < words.length && kwPos < kw.length; wi++) {
+					const word = words[wi];
+					// Try to consume as many keyword chars as possible from this word's prefix
+					let consumed = 0;
+					while (consumed < word.length && kwPos < kw.length && word[consumed] === kw[kwPos]) {
+						consumed++;
+						kwPos++;
+					}
+					if (consumed === 0) break; // word didn't contribute — stop
+					wordsUsed++;
+				}
+				// All keyword chars consumed, used ≥1 word(s)
+				if (kwPos === kw.length && wordsUsed >= 1) return true;
+			}
+			return false;
+		};
+
+		// Use shared stopwords + sport/league-specific extras
+		const SPORTS_EXTRA_STOPWORDS = new Set([
+			'win', 'score', 'rn', 'currently', 'today', 'tonight',
+			'up', 'bring', 'chance', 'chances', 'on', 'at', 'to', 'be',
 			// sport/league words
 			'lol', 'lck', 'lpl', 'lec', 'lcs', 'nba', 'nfl', 'mlb', 'nhl', 'cs2', 'val',
 			'esports', 'sports', 'season', 'match', 'game', 'gaming', 'series',
@@ -1234,7 +1320,7 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 		const queryKeywords = lowerQuery
 			.replace(/[^a-z0-9\s]/g, ' ')
 			.split(/\s+/)
-			.filter(w => w.length >= 2 && !STOPWORDS.has(w));
+			.filter(w => w.length >= 2 && !COMMON_STOPWORDS.has(w) && !SPORTS_EXTRA_STOPWORDS.has(w));
 
 		// Expand full team names to abbreviations (e.g., "JD Gaming" → "jdg")
 		// so keywords can match event slugs like `lol-jdg-blg-2026-03-04`.
@@ -1255,10 +1341,10 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 			const vsParts = lowerQuery.split(/\s+vs\.?\s+/);
 			const leftRaw = (vsParts[0] ?? '')
 				.replace(/[^a-z0-9\s]/g, ' ').split(/\s+/)
-				.filter(w => w.length >= 2 && !STOPWORDS.has(w));
+				.filter(w => w.length >= 2 && !COMMON_STOPWORDS.has(w) && !SPORTS_EXTRA_STOPWORDS.has(w));
 			const rightRaw = (vsParts.slice(1).join(' '))
 				.replace(/[^a-z0-9\s]/g, ' ').split(/\s+/)
-				.filter(w => w.length >= 2 && !STOPWORDS.has(w));
+				.filter(w => w.length >= 2 && !COMMON_STOPWORDS.has(w) && !SPORTS_EXTRA_STOPWORDS.has(w));
 
 			// Inject team abbreviations into left/right keyword sets
 			const leftText = (vsParts[0] ?? '').toLowerCase();
@@ -1274,7 +1360,9 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 			matchEvent = (h: string) => {
 				// Use prefix-aware matching (\b at start only) so "warrior" matches "warriors",
 				// "clipper" matches "clippers", etc. Leading \b prevents "jd" matching in "mjd".
-				const kwMatch = (kw: string, hay: string) => new RegExp('\\b' + kw).test(hay);
+				// Falls back to fuzzy slug match for abbreviated team names (e.g. "chsou" → "charleston-southern").
+				const kwMatch = (kw: string, hay: string) =>
+					new RegExp('\\b' + kw).test(hay) || fuzzySlugMatch(kw, hay);
 				const lMatch = leftKws.length > 0 && leftKws.some(kw => kwMatch(kw, h));
 				const rMatch = rightKws.length > 0 && rightKws.some(kw => kwMatch(kw, h));
 				// Always require BOTH teams to match — prevents false positives
@@ -1282,7 +1370,8 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 				return lMatch && rMatch;
 			};
 		} else {
-			matchEvent = (h: string) => queryKeywords.every(kw => new RegExp('\\b' + kw + '\\b').test(h));
+			matchEvent = (h: string) => queryKeywords.every(kw =>
+				new RegExp('\\b' + kw + '\\b').test(h) || fuzzySlugMatch(kw, h));
 		}
 		// Normalize accents in haystacks before matching to prevent false positives
 		// like \btom\b matching "Tomé" (accent é is \W, creating a word boundary).
@@ -1616,6 +1705,52 @@ export class PolymarketApiReadProvider implements PolymarketReadProvider {
 
 		return [];
 	}
+
+	/**
+	 * Scores and sorts event markets using TF-IDF weighted keyword matching.
+	 * Shared between player override results, slug results, and text_query results.
+	 */
+	private scoreAndSortEventMarkets(markets: Market[], searchTerms: string): Market[] {
+		const scoreKeywords = searchTerms
+			.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/)
+			.filter(w => w.length >= 2 && !COMMON_STOPWORDS.has(w));
+
+		markets.sort((a, b) => {
+			const rankStatus = (s: Market['status']): number => s === 'active' ? 0 : s === 'paused' ? 1 : 2;
+			const statusDiff = rankStatus(a.status) - rankStatus(b.status);
+			if (statusDiff !== 0) return statusDiff;
+			const scoreDiff = tfidfScore(b, scoreKeywords, markets) - tfidfScore(a, scoreKeywords, markets);
+			if (scoreDiff !== 0) return scoreDiff;
+			return Math.log10(Math.max(b.volume || 1, 1)) - Math.log10(Math.max(a.volume || 1, 1));
+		});
+
+		const activeCount = markets.filter(m => m.status === 'active').length;
+		console.log(`[search] Event results: ${markets.length} total, ${activeCount} active. Top: "${markets[0]?.question}"`);
+		return markets;
+	}
+}
+
+
+/**
+ * TF-IDF scoring: weights rare keywords higher than common ones.
+ * score += 1 / log2(1 + df) per keyword hit, where df = how many documents contain that keyword.
+ * This ensures that "Newsom" (rare) scores much higher than "president" (common).
+ */
+function tfidfScore(market: { question: string }, keywords: string[], corpus: { question: string }[]): number {
+	if (keywords.length === 0) return 0;
+	const q = market.question.toLowerCase();
+	let score = 0;
+	for (const kw of keywords) {
+		if (!q.includes(kw)) continue;
+		// Document frequency: how many markets in the corpus contain this keyword
+		const df = corpus.filter(m => m.question.toLowerCase().includes(kw)).length;
+		// IDF weight: rare keywords get higher weight
+		score += 1 / Math.log2(1 + Math.max(df, 1));
+	}
+	// Phrase bonus: if the first 4 keywords appear consecutively, add a bonus
+	const phrase = keywords.slice(0, 4).join(' ');
+	if (phrase.length >= 5 && q.includes(phrase)) score += 2;
+	return score;
 }
 
 /**
@@ -1644,21 +1779,13 @@ function rankMarkets(markets: Market[]): Market[] {
  *       → "Presidential Election Winner 2028 JD Vance"
  */
 function cleanSearchKeywords(query: string): string {
-	const NOISE_WORDS = new Set([
-		'the', 'a', 'an', 'of', 'for', 'in', 'on', 'at', 'to', 'is', 'are', 'be',
-		'will', 'who', 'what', 'whats', 'how', 'which', 'and', 'or',
-		'market', 'markets', 'condition', 'status', 'odds', 'about',
-		'show', 'tell', 'me', 'please', 'check', 'hi', 'hey', 'can', 'you',
-		'give', 'find', 'get', 'current', 'live', 'update', 'updates',
-		'going', 'this', 'that', 'it', 'its', 'do', 'does', 'did',
-		'has', 'have', 'been', 'would', 'should', 'could', 'any',
-		'right', 'now', 'today', 'tonight', 'latest', 'looking', 'see',
-	]);
+	// Use shared stopwords + a few extra words specific to keyword cleaning
+	const CLEAN_EXTRA = new Set(['condition', 'today', 'tonight', 'latest']);
 
 	const words = query.trim().split(/\s+/);
 	const cleaned = words.filter(w => {
 		const lower = w.toLowerCase().replace(/[^a-z0-9]/g, '');
-		return lower.length >= 2 && !NOISE_WORDS.has(lower);
+		return lower.length >= 2 && !COMMON_STOPWORDS.has(lower) && !CLEAN_EXTRA.has(lower);
 	});
 
 	// If aggressive cleaning removed too much, fall back to original
@@ -1840,19 +1967,10 @@ async function extractSearchKeywords(message: string): Promise<string> {
 async function extractKeywordsAndSlugs(message: string): Promise<{ keywords: string; slugPredictions: string[] }> {
 	const stripped = stripConversationalPrefix(message);
 
-	// vs-queries: return immediately — sports search handles these
-	const isVsQuery = /\b(vs\.?|versus)\b/i.test(stripped) && stripped.split(/\s+/).length <= 6;
-	if (isVsQuery) {
-		console.log(`[extractKeywordsAndSlugs] vs-query, no AI needed: "${stripped}"`);
-		return { keywords: stripped, slugPredictions: [] };
-	}
-
-	// Only skip AI for very trivial 1-2 word queries (e.g. "bitcoin", "trump").
-	// For anything 3+ words, call AI — even short phrases like "trump tariff canada"
-	// (3 words) benefit greatly from AI-predicted slugs like "will-trump-impose-tariffs-on-canada".
+	// For very short queries (1 word), skip AI — not enough context for useful slug predictions
 	const strippedWords = stripped.trim().split(/\s+/).length;
-	if (strippedWords <= 2) {
-		console.log(`[extractKeywordsAndSlugs] Very short query, using stripped: "${stripped}"`);
+	if (strippedWords <= 1) {
+		console.log(`[extractKeywordsAndSlugs] Single-word query, using stripped: "${stripped}"`);
 		return { keywords: stripped, slugPredictions: [] };
 	}
 
@@ -2065,14 +2183,8 @@ function buildEventSlugCandidates(query: string): string[] {
 	}
 
 	// Filter out noise words to get core topic keywords
-	const SLUG_NOISE = new Set([
-		'the', 'a', 'an', 'of', 'for', 'in', 'on', 'at', 'to', 'is', 'are', 'be',
-		'will', 'who', 'what', 'whats', 'how', 'which', 'and', 'or',
-		'market', 'markets', 'condition', 'status', 'odds', 'about',
-		'show', 'tell', 'me', 'please', 'check', 'hi', 'hey', 'can', 'you',
-		'give', 'find', 'get', 'current', 'live', 'update',
-	]);
-	const coreWords = stripped.filter(w => w.length >= 2 && !SLUG_NOISE.has(w));
+	const SLUG_EXTRA = new Set(['condition']);
+	const coreWords = stripped.filter(w => w.length >= 2 && !COMMON_STOPWORDS.has(w) && !SLUG_EXTRA.has(w));
 
 	const candidates: string[] = [];
 	const add = (s: string) => {

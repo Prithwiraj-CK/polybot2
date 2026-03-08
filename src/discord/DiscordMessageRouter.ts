@@ -195,7 +195,11 @@ export class DiscordMessageRouter {
 		// showing random unrelated trending markets (like StarCraft II for an NBA query).
 		let sampleSummaries;
 		if (searchResults.length > 0) {
-			sampleSummaries = summarizeUpToThree(searchResults, message);
+			// Refresh prices for the top result so the user sees live odds
+			// (especially important for live sports where prices change rapidly)
+			const refreshed = await this.deps.readService.refreshMarketPrices(searchResults[0] as import('../types').Market);
+			const updatedResults = [refreshed, ...searchResults.slice(1)];
+			sampleSummaries = summarizeUpToThree(updatedResults, message);
 		} else {
 			sampleSummaries = [];
 		}
